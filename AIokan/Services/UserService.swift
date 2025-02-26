@@ -15,7 +15,7 @@ class UserService: ObservableObject {
     private let usersCollection = "users"
     
     @Published var currentUserProfile: UserProfile?
-    private var cancellables = Set<AnyCancellable>()
+    var cancellables = Set<AnyCancellable>()
     private var authStateHandle: AuthStateDidChangeListenerHandle?
     
     init() {
