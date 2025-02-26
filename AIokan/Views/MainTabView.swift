@@ -15,7 +15,7 @@ struct MainTabView: View {
             WeeklyTasksView()
                 .tabItem {
                     Image(systemName: "calendar")
-                    Text("今週")
+                    Text("タスク")
                 }
                 .tag(1)
             
