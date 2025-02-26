@@ -4,15 +4,64 @@ import Combine
 import AuthenticationServices
 import Foundation
 
-struct LoginView: View {
-    @State private var email: String = ""
-    @State private var password: String = ""
-    @State private var errorMessage: String = ""
-    @State private var isLoading: Bool = false
-    @StateObject private var authService = AuthService()
+// ViewModelをクラスに変更
+class LoginViewModel: ObservableObject {
+    @Published var email: String = ""
+    @Published var password: String = ""
+    @Published var errorMessage: String = ""
+    @Published var isLoading: Bool = false
     
-    // クラスベースの参照型に変更
-    @State private var cancellables = Set<AnyCancellable>()
+    // AuthServiceの参照
+    var authService: AuthService
+    
+    // Combineの購読を管理
+    var cancellables = Set<AnyCancellable>()
+    
+    init(authService: AuthService) {
+        self.authService = authService
+    }
+    
+    func login() {
+        guard !email.isEmpty, !password.isEmpty else {
+            errorMessage = "メールアドレスとパスワードを入力してください"
+            return
+        }
+        
+        isLoading = true
+        errorMessage = ""
+        
+        authService.signIn(email: email, password: password)
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { [weak self] completion in
+                guard let self = self else { return }
+                self.isLoading = false
+                if case .failure(let error) = completion {
+                    self.errorMessage = error.localizedDescription
+                }
+            }, receiveValue: { [weak self] _ in
+                // ログイン成功、認証状態が更新されればContentViewで自動的に画面が切り替わる
+                guard let self = self else { return }
+                self.isLoading = false
+                // 認証状態の更新を確認する
+                print("ログイン成功: \(String(describing: Auth.auth().currentUser?.uid))")
+            })
+            .store(in: &cancellables)
+    }
+    
+    func handleAppleSignIn(result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let authorization):
+            authService.handleSignInWithAppleCompletion(authorization: authorization)
+        case .failure(let error):
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct LoginView: View {
+    // AuthServiceをEnvironmentObjectとして外部から取得
+    @EnvironmentObject var authService: AuthService
+    @StateObject private var viewModel = LoginViewModel(authService: AuthService())
     
     var body: some View {
         NavigationView {
@@ -35,27 +84,27 @@ struct LoginView: View {
                 }
                 
                 VStack(spacing: 15) {
-                    TextField("メールアドレス", text: $email)
+                    TextField("メールアドレス", text: $viewModel.email)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .autocapitalization(.none)
                         .keyboardType(.emailAddress)
                         .disableAutocorrection(true)
                     
-                    SecureField("パスワード", text: $password)
+                    SecureField("パスワード", text: $viewModel.password)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                 }
                 .padding(.horizontal)
                 
-                if !errorMessage.isEmpty {
-                    Text(errorMessage)
+                if !viewModel.errorMessage.isEmpty {
+                    Text(viewModel.errorMessage)
                         .foregroundColor(.red)
                         .font(.caption)
                 }
                 
                 Button(action: {
-                    login()
+                    viewModel.login()
                 }) {
-                    if isLoading {
+                    if viewModel.isLoading {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                     } else {
@@ -68,10 +117,10 @@ struct LoginView: View {
                 .background(Color.blue)
                 .cornerRadius(10)
                 .padding(.horizontal)
-                .disabled(isLoading)
+                .disabled(viewModel.isLoading)
                 
                 Button(action: {
-                    authService.signInWithGoogle()
+                    viewModel.authService.signInWithGoogle()
                 }) {
                     Text("Googleでログイン")
                         .foregroundColor(.white)
@@ -81,21 +130,21 @@ struct LoginView: View {
                         .cornerRadius(10)
                 }
                 .padding(.horizontal)
-                .disabled(isLoading)
+                .disabled(viewModel.isLoading)
                 
                 SignInWithAppleButton(
                     onRequest: { request in
                         // リクエスト設定
                     },
                     onCompletion: { result in
-                        handleAppleSignIn(result: result)
+                        viewModel.handleAppleSignIn(result: result)
                     }
                 )
                 .frame(height: 50)
                 .padding(.horizontal)
-                .disabled(isLoading)
+                .disabled(viewModel.isLoading)
                 
-                NavigationLink(destination: SignUpView()) {
+                NavigationLink(destination: SignUpView().environmentObject(authService)) {
                     Text("アカウントをお持ちでない方はこちら")
                         .foregroundColor(.blue)
                         .padding(.top)
@@ -105,42 +154,8 @@ struct LoginView: View {
             .navigationBarHidden(true)
         }
         .onAppear {
-            // 既にログインしているかチェック
-            if Auth.auth().currentUser != nil {
-                // メイン画面に遷移
-            }
-        }
-    }
-    
-    private func login() {
-        guard !email.isEmpty, !password.isEmpty else {
-            errorMessage = "メールアドレスとパスワードを入力してください"
-            return
-        }
-        
-        isLoading = true
-        errorMessage = ""
-        
-        authService.signIn(email: email, password: password)
-            .receive(on: DispatchQueue.main)
-            .sink(receiveCompletion: { completion in
-                self.isLoading = false
-                if case .failure(let error) = completion {
-                    self.errorMessage = error.localizedDescription
-                }
-            }, receiveValue: { _ in
-                // ログイン成功、メイン画面に遷移
-                self.isLoading = false
-            })
-            .store(in: &cancellables)
-    }
-    
-    private func handleAppleSignIn(result: Result<ASAuthorization, Error>) {
-        switch result {
-        case .success(let authorization):
-            authService.handleSignInWithAppleCompletion(authorization: authorization)
-        case .failure(let error):
-            errorMessage = error.localizedDescription
+            // EnvironmentObjectから取得したauthServiceをViewModelに渡す
+            viewModel.authService = authService
         }
     }
 }

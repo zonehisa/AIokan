@@ -29,27 +29,48 @@ class UserService: ObservableObject {
     }
     
     func fetchUserProfile(userId: String) {
+        print("UserService: ユーザープロファイル取得開始: \(userId)")
+        
+        // バックグラウンドスレッドで実行されていないことを確認
+        if !Thread.isMainThread {
+            print("警告: fetchUserProfileがバックグラウンドスレッドで呼び出されています")
+        }
+        
         db.collection(usersCollection).document(userId).getDocument { [weak self] snapshot, error in
             if let error = error {
-                print("ユーザープロファイルの取得エラー: \(error.localizedDescription)")
+                print("UserService: ユーザープロファイルの取得エラー: \(error.localizedDescription)")
                 return
             }
             
             guard let snapshot = snapshot, snapshot.exists else {
-                print("ユーザープロファイルが存在しません")
+                print("UserService: ユーザープロファイルが存在しません: \(userId)")
                 return
             }
             
-            do {
-                let data = snapshot.data() ?? [:]
-                let jsonData = try JSONSerialization.data(withJSONObject: data)
-                let userProfile = try JSONDecoder().decode(UserProfile.self, from: jsonData)
+            guard let data = snapshot.data() else {
+                print("UserService: ユーザープロファイルデータが空です: \(userId)")
+                return
+            }
+            
+            print("UserService: ユーザープロファイルデータ取得成功: \(userId)")
+            
+            // 新しいヘルパーメソッドを使用して直接Firestoreデータを変換
+            var firestoreData = data
+            firestoreData["id"] = userId // IDはドキュメントIDから取得
+            
+            // ディスパッチキューをより明示的に制御
+            DispatchQueue.global(qos: .userInitiated).async {
+                print("UserService: ユーザープロファイル変換処理開始: \(userId)")
                 
-                DispatchQueue.main.async {
-                    self?.currentUserProfile = userProfile
+                if let userProfile = UserProfile.fromFirestoreData(firestoreData) {
+                    DispatchQueue.main.async {
+                        print("UserService: ユーザープロファイル設定（メインスレッド）: \(userId)")
+                        self?.currentUserProfile = userProfile
+                        print("UserService: 現在のユーザープロファイル更新完了: \(userId)")
+                    }
+                } else {
+                    print("UserService: ユーザープロファイルの変換に失敗: \(userId)")
                 }
-            } catch {
-                print("ユーザープロファイルのデコードエラー: \(error.localizedDescription)")
             }
         }
     }
@@ -68,20 +89,18 @@ class UserService: ObservableObject {
                 photoURL: user.photoURL?.absoluteString
             )
             
-            do {
-                let data = try JSONEncoder().encode(userProfile)
-                let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-                
-                self.db.collection(self.usersCollection).document(user.uid).setData(dict) { error in
-                    if let error = error {
-                        promise(.failure(error))
-                        return
-                    }
-                    
-                    promise(.success(userProfile))
+            // 新しいヘルパーメソッドを使用してFirestoreデータに直接変換
+            let firestoreData = userProfile.toFirestoreData()
+            
+            self.db.collection(self.usersCollection).document(user.uid).setData(firestoreData) { error in
+                if let error = error {
+                    print("ユーザープロファイル作成エラー: \(error.localizedDescription)")
+                    promise(.failure(error))
+                    return
                 }
-            } catch {
-                promise(.failure(error))
+                
+                print("ユーザープロファイル作成成功: \(user.uid)")
+                promise(.success(userProfile))
             }
         }
         .eraseToAnyPublisher()
@@ -94,20 +113,18 @@ class UserService: ObservableObject {
                 return
             }
             
-            do {
-                let data = try JSONEncoder().encode(userProfile)
-                let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-                
-                self.db.collection(self.usersCollection).document(userProfile.id).updateData(dict) { error in
-                    if let error = error {
-                        promise(.failure(error))
-                        return
-                    }
-                    
-                    promise(.success(userProfile))
+            // 新しいヘルパーメソッドを使用してFirestoreデータに直接変換
+            let firestoreData = userProfile.toFirestoreData()
+            
+            self.db.collection(self.usersCollection).document(userProfile.id).updateData(firestoreData) { error in
+                if let error = error {
+                    print("ユーザープロファイル更新エラー: \(error.localizedDescription)")
+                    promise(.failure(error))
+                    return
                 }
-            } catch {
-                promise(.failure(error))
+                
+                print("ユーザープロファイル更新成功: \(userProfile.id)")
+                promise(.success(userProfile))
             }
         }
         .eraseToAnyPublisher()
@@ -121,6 +138,8 @@ class UserService: ObservableObject {
         db.collection(usersCollection).document(userId).updateData(data) { error in
             if let error = error {
                 print("最終ログイン日時の更新エラー: \(error.localizedDescription)")
+            } else {
+                print("最終ログイン日時の更新成功: \(userId)")
             }
         }
     }

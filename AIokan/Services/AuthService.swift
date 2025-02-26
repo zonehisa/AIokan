@@ -14,7 +14,21 @@ import GoogleSignIn
 import GoogleSignInSwift
 import FirebaseCore
 
-class AuthService: ObservableObject {
+// プレゼンテーションコンテキストプロバイダークラス
+class AppleAuthorizationPresentation: NSObject, ASAuthorizationControllerPresentationContextProviding {
+    private var window: UIWindow
+    
+    init(window: UIWindow) {
+        self.window = window
+        super.init()
+    }
+    
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        return window
+    }
+}
+
+class AuthService: NSObject, ObservableObject {
     @Published var user: User?
     @Published var isAuthenticated = false
     
@@ -23,19 +37,49 @@ class AuthService: ObservableObject {
     private var currentNonce: String?
     private var authStateHandle: AuthStateDidChangeListenerHandle?
     
-    init() {
+    override init() {
+        super.init()
+        
+        // デバッグログ
+        print("AuthService: 初期化開始")
+        
+        // 初期状態を設定
+        let currentUser = Auth.auth().currentUser
+        self.user = currentUser
+        self.isAuthenticated = currentUser != nil
+        
+        print("AuthService初期化: 現在のユーザー = \(currentUser?.uid ?? "なし"), isAuthenticated = \(isAuthenticated)")
+        
+        // Firebaseの認証状態変更リスナーを設定
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
-            self?.user = user
-            self?.isAuthenticated = user != nil
+            guard let self = self else { 
+                print("警告: AuthStateListener - selfが解放されています")
+                return 
+            }
             
-            if let user = user {
-                self?.userService.updateLastLogin(userId: user.uid)
+            print("認証状態変更検出: userID = \(user?.uid ?? "なし")")
+            
+            // UI更新は必ずメインスレッドで行う
+            DispatchQueue.main.async {
+                // 前の状態と現在の状態をログ出力
+                let oldAuthenticated = self.isAuthenticated
+                let newAuthenticated = user != nil
+                
+                // 状態を更新
+                self.user = user
+                self.isAuthenticated = newAuthenticated
+                
+                print("認証状態変更: \(oldAuthenticated) -> \(newAuthenticated), userId = \(user?.uid ?? "なし")")
+                
+                if let user = user {
+                    self.userService.updateLastLogin(userId: user.uid)
+                }
             }
         }
     }
     
     func signIn(email: String, password: String) -> AnyPublisher<User, Error> {
-        return Future<User, Error> { promise in
+        return Future<User, Error> { [weak self] promise in
             Auth.auth().signIn(withEmail: email, password: password) { authResult, error in
                 if let error = error {
                     promise(.failure(error))
@@ -43,6 +87,12 @@ class AuthService: ObservableObject {
                 }
                 
                 if let user = authResult?.user {
+                    // 認証状態を明示的に更新
+                    DispatchQueue.main.async {
+                        self?.user = user
+                        self?.isAuthenticated = true
+                        print("signIn - 認証状態を明示的に更新: user=\(user.uid)")
+                    }
                     promise(.success(user))
                 } else {
                     promise(.failure(NSError(domain: "AuthService", code: -1, userInfo: [NSLocalizedDescriptionKey: "不明なエラーが発生しました"])))
@@ -54,31 +104,53 @@ class AuthService: ObservableObject {
     
     func signUp(email: String, password: String) -> AnyPublisher<User, Error> {
         return Future<User, Error> { [weak self] promise in
+            print("AuthService: ユーザー登録開始 - \(email)")
             Auth.auth().createUser(withEmail: email, password: password) { authResult, error in
                 if let error = error {
+                    print("AuthService: ユーザー登録エラー - \(error.localizedDescription)")
                     promise(.failure(error))
                     return
                 }
                 
                 guard let user = authResult?.user else {
+                    print("AuthService: ユーザー登録失敗 - ユーザーが取得できませんでした")
                     promise(.failure(NSError(domain: "AuthService", code: -1, userInfo: [NSLocalizedDescriptionKey: "ユーザー作成エラー"])))
                     return
                 }
                 
-                // ユーザープロファイルを作成
-                guard let self = self else { return }
+                print("AuthService: ユーザー登録成功 - \(user.uid)")
                 
+                // 認証状態を明示的に更新
+                DispatchQueue.main.async {
+                    self?.user = user
+                    self?.isAuthenticated = true
+                    print("signUp - 認証状態を明示的に更新: user=\(user.uid), isAuthenticated=true")
+                }
+                
+                // ユーザープロファイルを作成
+                guard let self = self else { 
+                    // selfが解放されていてもユーザー作成自体は成功しているので、成功として扱う
+                    print("AuthService: self解放のためプロファイル作成をスキップ")
+                    promise(.success(user))
+                    return 
+                }
+                
+                print("AuthService: ユーザープロファイル作成開始 - \(user.uid)")
                 self.userService.createUserProfile(user: user)
                     .sink(receiveCompletion: { completion in
                         if case .failure(let error) = completion {
-                            print("プロファイル作成エラー: \(error.localizedDescription)")
+                            print("AuthService: プロファイル作成エラー - \(error.localizedDescription)")
+                            // プロファイル作成失敗でもユーザー作成自体は成功しているので、成功として扱う
+                        } else {
+                            print("AuthService: プロファイル作成完了 - \(user.uid)")
                         }
+                        // 完了通知をここで送る（エラーがあっても）
+                        promise(.success(user))
                     }, receiveValue: { _ in
-                        print("ユーザープロファイルが作成されました")
+                        print("AuthService: ユーザープロファイルが作成されました - \(user.uid)")
+                        // 成功値を受信した時点では完了通知を送らない（receiveCompletionで送る）
                     })
                     .store(in: &self.cancellables)
-                
-                promise(.success(user))
             }
         }
         .eraseToAnyPublisher()
@@ -140,18 +212,68 @@ class AuthService: ObservableObject {
     // MARK: - Apple Sign In
     
     func signInWithApple() {
-        // Appleログイン処理の実装
-        let nonce = randomNonceString()
-        currentNonce = nonce
-        let appleIDProvider = ASAuthorizationAppleIDProvider()
-        let request = appleIDProvider.createRequest()
-        request.requestedScopes = [.fullName, .email]
-        request.nonce = sha256(nonce)
+        // 開発用のモック実装
+        print("Apple Sign Inはモック実装中です（Apple Developer Programの登録が必要）")
         
-        let authorizationController = ASAuthorizationController(authorizationRequests: [request])
-        // authorizationController.delegate = context.coordinator
-        // authorizationController.presentationContextProvider = context.coordinator
-        authorizationController.performRequests()
+        // メインスレッドであることを確認
+        if !Thread.isMainThread {
+            print("警告: signInWithAppleがメインスレッド以外で呼び出されています")
+            DispatchQueue.main.async {
+                self.signInWithApple()
+            }
+            return
+        }
+        
+        // モック認証のためのダミーユーザー作成
+        let mockUser = Auth.auth().currentUser
+        if mockUser == nil {
+            // すでにログインしていなければ、匿名ログインを行う
+            print("モック認証: 匿名ログインを開始します")
+            Auth.auth().signInAnonymously { [weak self] (authResult, error) in
+                if let error = error {
+                    print("モック認証エラー: \(error.localizedDescription)")
+                    return
+                }
+                
+                guard let user = authResult?.user else { 
+                    print("モック認証: ユーザーが取得できませんでした")
+                    return 
+                }
+                print("モック認証成功: \(user.uid)")
+                
+                // 認証状態を明示的に更新（メインスレッドでUIを更新）
+                DispatchQueue.main.async {
+                    self?.user = user
+                    self?.isAuthenticated = true
+                    print("モック認証: 認証状態を更新しました - isAuthenticated = \(self?.isAuthenticated ?? false)")
+                }
+                
+                // ユーザープロファイルを作成
+                guard let self = self else { 
+                    print("モック認証: selfが解放されました")
+                    return 
+                }
+                self.userService.createUserProfile(user: user)
+                    .sink(receiveCompletion: { completion in
+                        if case .failure(let error) = completion {
+                            print("プロファイル作成エラー: \(error.localizedDescription)")
+                        } else {
+                            print("モックユーザープロファイル作成完了")
+                        }
+                    }, receiveValue: { _ in
+                        print("モックユーザープロファイルが作成されました")
+                    })
+                    .store(in: &self.cancellables)
+            }
+        } else {
+            print("すでにログインしています: \(mockUser!.uid)")
+            // 認証状態を明示的に更新（既存ユーザーの場合）
+            DispatchQueue.main.async {
+                self.user = mockUser
+                self.isAuthenticated = true
+                print("モック認証（既存ユーザー）: 認証状態を更新しました - isAuthenticated = \(self.isAuthenticated)")
+            }
+        }
     }
     
     // Apple Sign In用のヘルパーメソッド
@@ -197,48 +319,55 @@ class AuthService: ObservableObject {
     }
     
     func handleSignInWithAppleCompletion(authorization: ASAuthorization) {
-        if let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential {
-            guard currentNonce != nil else {
-                fatalError("Invalid state: A login callback was received, but no login request was sent.")
-            }
-            guard let appleIDToken = appleIDCredential.identityToken else {
-                print("Unable to fetch identity token")
-                return
-            }
-            guard let idTokenString = String(data: appleIDToken, encoding: .utf8) else {
-                print("Unable to serialize token string from data: \(appleIDToken.debugDescription)")
-                return
-            }
-            
-            // Firebase Authの最新API形式に従って修正（非推奨メソッドを修正）
-            let credential: OAuthCredential = OAuthProvider.credential(
-                providerID: AuthProviderID.apple,
-                accessToken: idTokenString
-            )
-            
-            // Sign in with Firebase.
-            Auth.auth().signIn(with: credential) { [weak self] (authResult, error) in
-                if let error = error {
-                    print("Firebase sign in error: \(error.localizedDescription)")
-                    return
-                }
-                
-                // ユーザープロファイルを作成または更新
-                if let user = authResult?.user {
-                    guard let self = self else { return }
-                    self.userService.createUserProfile(user: user)
-                        .sink(receiveCompletion: { _ in }, receiveValue: { _ in })
-                        .store(in: &self.cancellables)
-                }
-            }
-        }
+        // 開発用のモック実装
+        print("handleSignInWithAppleCompletionはモック実装中です（Apple Developer Programの登録が必要）")
+        
+        // 実際の実装は無効化されていますが、UIフローを維持するためにここで処理を完了させます
+        // 必要に応じて、ここでモックユーザーで認証を行うことも可能です
     }
     
     func signOut() {
+        print("ログアウト処理開始")
+        
+        // メインスレッド確認
+        if !Thread.isMainThread {
+            print("警告: signOutがメインスレッド以外で呼び出されています")
+            DispatchQueue.main.async {
+                self.signOut()
+            }
+            return
+        }
+        
         do {
+            // 状態を先に更新してUIの応答性を確保
+            self.user = nil
+            self.isAuthenticated = false
+            print("認証状態を先に更新: isAuthenticated = false")
+            
+            // 実際のログアウト処理（これがブロックしても上のUI更新は先に実行される）
             try Auth.auth().signOut()
+            print("Firebase認証: ログアウト成功")
         } catch {
             print("サインアウトエラー: \(error.localizedDescription)")
+            
+            // エラーが発生した場合は再度現在の認証状態を確認
+            let currentUser = Auth.auth().currentUser
+            DispatchQueue.main.async {
+                self.user = currentUser
+                self.isAuthenticated = currentUser != nil
+                print("エラー発生後の状態リセット: isAuthenticated = \(self.isAuthenticated)")
+            }
         }
+    }
+}
+
+// MARK: - ASAuthorizationControllerDelegate
+extension AuthService: ASAuthorizationControllerDelegate {
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
+        handleSignInWithAppleCompletion(authorization: authorization)
+    }
+    
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+        print("Apple Sign Inエラー: \(error.localizedDescription)")
     }
 } 
