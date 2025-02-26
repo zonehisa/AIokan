@@ -31,6 +31,9 @@
             </array>
         </dict>
     </array>
-    <!-- 他の設定があればここに追加 -->
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
 </dict>
 </plist>

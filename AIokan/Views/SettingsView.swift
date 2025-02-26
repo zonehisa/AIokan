@@ -1,6 +1,8 @@
 import SwiftUI
+import FirebaseAuth
 
 struct SettingsView: View {
+    @EnvironmentObject var authService: AuthService
     @State private var notificationsEnabled = true
     @State private var randomNotificationsEnabled = true
     @State private var selectedNotificationStyle = 0
@@ -13,7 +15,7 @@ struct SettingsView: View {
                     HStack {
                         Text("メールアドレス")
                         Spacer()
-                        Text("user@example.com")
+                        Text(Auth.auth().currentUser?.email ?? "未ログイン")
                             .foregroundColor(.gray)
                     }
                     
@@ -22,6 +24,16 @@ struct SettingsView: View {
                     }) {
                         Text("ログアウト")
                             .foregroundColor(.red)
+                    }
+                    
+                    Button(action: {
+                        print("緊急ログアウトボタンがタップされました")
+                        // 直接ログアウト処理を実行（確認なし）
+                        authService.signOut()
+                    }) {
+                        Text("緊急ログアウト")
+                            .foregroundColor(.red)
+                            .font(.caption)
                     }
                 }
                 
@@ -84,10 +96,22 @@ struct SettingsView: View {
                     title: Text("ログアウト"),
                     message: Text("本当にログアウトしますか？"),
                     primaryButton: .destructive(Text("ログアウト")) {
-                        // ログアウト処理
+                        // ログアウト処理を実行
+                        authService.signOut()
                     },
                     secondaryButton: .cancel(Text("キャンセル"))
                 )
+            }
+            .onAppear {
+                print("SettingsView - onAppear: 認証状態 = \(authService.isAuthenticated)")
+                print("現在のユーザー: \(Auth.auth().currentUser?.uid ?? "なし")")
+                
+                // デバッグ用：UIスレッドの状態確認
+                if Thread.isMainThread {
+                    print("SettingsView - onAppearはメインスレッドで実行されています")
+                } else {
+                    print("警告: SettingsView - onAppearがバックグラウンドスレッドで実行されています")
+                }
             }
         }
     }
@@ -95,4 +119,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+        .environmentObject(AuthService()) // プレビュー用にAuthServiceを提供
 } 

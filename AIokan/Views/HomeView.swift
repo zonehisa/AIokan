@@ -9,7 +9,7 @@ import SwiftUI
 import FirebaseAuth
 
 struct HomeView: View {
-    @StateObject private var authService = AuthService()
+    @EnvironmentObject var authService: AuthService
     @StateObject private var userService = UserService()
     
     var body: some View {
@@ -58,10 +58,11 @@ struct HomeView: View {
             }
             .padding()
             .navigationTitle("ホーム")
-        }
-        .onAppear {
-            if let user = Auth.auth().currentUser {
-                userService.fetchUserProfile(userId: user.uid)
+            .onAppear {
+                print("HomeView - onAppear: 認証状態 = \(authService.isAuthenticated)")
+                if let user = Auth.auth().currentUser {
+                    userService.fetchUserProfile(userId: user.uid)
+                }
             }
         }
     }
@@ -77,4 +78,5 @@ struct HomeView: View {
 
 #Preview {
     HomeView()
+        .environmentObject(AuthService())
 } 

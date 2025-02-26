@@ -26,10 +26,12 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct AIokanApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @StateObject private var authService = AuthService()
     
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(authService)
         }
     }
 }
