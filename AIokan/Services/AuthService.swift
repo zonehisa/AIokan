@@ -10,6 +10,9 @@ import FirebaseAuth
 import Combine
 import AuthenticationServices
 import CryptoKit
+import GoogleSignIn
+import GoogleSignInSwift
+import FirebaseCore
 
 class AuthService: ObservableObject {
     @Published var user: User?
@@ -83,26 +86,35 @@ class AuthService: ObservableObject {
     
     func signInWithGoogle() {
         // Googleログイン処理の実装
-        // 注: GoogleSignInライブラリが必要です
-        // 以下は実装例です：
-        /*
-        guard let clientID = FirebaseApp.app()?.options.clientID else { return }
-        let config = GIDConfiguration(clientID: clientID)
+        guard let clientID = FirebaseCore.FirebaseApp.app()?.options.clientID else { return }
+        _ = GIDConfiguration(clientID: clientID)
         
-        GIDSignIn.sharedInstance.signIn(with: config, presenting: UIApplication.shared.windows.first?.rootViewController ?? UIViewController()) { [weak self] user, error in
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else {
+            print("ルートビューコントローラーが見つかりません")
+            return
+        }
+        
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { [weak self] result, error in
             if let error = error {
                 print("Googleログインエラー: \(error.localizedDescription)")
                 return
             }
             
-            guard let authentication = user?.authentication,
-                  let idToken = authentication.idToken else {
+            guard let result = result else {
+                print("認証情報の取得に失敗しました")
                 return
             }
             
-            let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: authentication.accessToken)
+            guard let idToken = result.user.idToken?.tokenString else {
+                print("認証情報の取得に失敗しました")
+                return
+            }
             
-            Auth.auth().signIn(with: credential) { authResult, error in
+            let accessToken = result.user.accessToken.tokenString
+            let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
+            
+            Auth.auth().signIn(with: credential) { [weak self] authResult, error in
                 if let error = error {
                     print("Firebaseログインエラー: \(error.localizedDescription)")
                     return
@@ -112,12 +124,17 @@ class AuthService: ObservableObject {
                 if let user = authResult?.user {
                     guard let self = self else { return }
                     self.userService.createUserProfile(user: user)
-                        .sink(receiveCompletion: { _ in }, receiveValue: { _ in })
+                        .sink(receiveCompletion: { completion in
+                            if case .failure(let error) = completion {
+                                print("プロファイル作成エラー: \(error.localizedDescription)")
+                            }
+                        }, receiveValue: { _ in
+                            print("Googleログイン成功：ユーザープロファイルを更新しました")
+                        })
                         .store(in: &self.cancellables)
                 }
             }
         }
-        */
     }
     
     // MARK: - Apple Sign In
@@ -181,7 +198,7 @@ class AuthService: ObservableObject {
     
     func handleSignInWithAppleCompletion(authorization: ASAuthorization) {
         if let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential {
-            guard let nonce = currentNonce else {
+            guard currentNonce != nil else {
                 fatalError("Invalid state: A login callback was received, but no login request was sent.")
             }
             guard let appleIDToken = appleIDCredential.identityToken else {
