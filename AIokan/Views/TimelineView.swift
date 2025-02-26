@@ -1,221 +1,360 @@
+//
+//  TimelineView.swift
+//  AIokan
+//
+//  Created by AI Assistant on 2025/02/26.
+//
+
 import SwiftUI
+import FirebaseAuth
+import Combine
 
-struct Task: Identifiable {
-    let id = UUID()
-    var title: String
-    var isCompleted: Bool
-    var dueDate: Date?
-    var duration: TimeInterval? = 60 * 60 // デフォルト1時間（秒単位）
-    var color: Color = .blue // タスクの色（カスタマイズ可能）
-}
-
-struct TimelineView: View {
-    @State private var tasks: [Task] = [
-        Task(title: "プレゼン資料作成", isCompleted: false, dueDate: Calendar.current.date(bySettingHour: 7, minute: 30, second: 0, of: Date()), duration: 120 * 60),
-        Task(title: "買い物に行く", isCompleted: false, dueDate: Calendar.current.date(bySettingHour: 11, minute: 0, second: 0, of: Date()), duration: 60 * 60)
-    ]
-    @State private var showingAddTask = false
-    @State private var selectedDate = Date()
-    @State private var draggedTaskID: UUID? = nil
-    @State private var draggedTaskOffset: CGFloat = 0
+class TimelineViewModel: ObservableObject {
+    @Published var selectedDate: Date = Date()
+    @Published var showAddTask: Bool = false
+    @Published var isLoadingTasks: Bool = false
+    @Published var selectedTimeBlock: (start: Date, end: Date)? = nil
     
-    private let hourHeight: CGFloat = 60
-    private let timeRange = Calendar.current.date(bySettingHour: 0, minute: 0, second: 0, of: Date())!...Calendar.current.date(bySettingHour: 23, minute: 59, second: 59, of: Date())!
+    private var taskService = TaskService()
+    private var cancellables = Set<AnyCancellable>()
     
-    var body: some View {
-        NavigationView {
-            ZStack(alignment: .bottomTrailing) {
-                GeometryReader { geometry in
-                    ScrollView(.vertical, showsIndicators: true) {
-                        VStack(spacing: 0) {
-                            // タイムライン部分
-                            ZStack(alignment: .topLeading) {
-                                // 時間軸
-                                VStack(spacing: 0) {
-                                    ForEach(0..<24) { hour in
-                                        TimelineHourRow(hour: hour, hourHeight: hourHeight)
-                                    }
-                                }
-                                
-                                // タスク表示
-                                ForEach(tasks) { task in
-                                    if let dueDate = task.dueDate, let duration = task.duration {
-                                        let yPosition = calculateYPosition(for: dueDate)
-                                        let offset = (draggedTaskID == task.id) ? draggedTaskOffset : 0
-                                        
-                                        TimelineTaskView(task: task)
-                                            .frame(width: geometry.size.width * 0.7, height: calculateHeight(for: duration))
-                                            .position(
-                                                x: geometry.size.width * 0.5,
-                                                y: yPosition + calculateHeight(for: duration) / 2 + offset
-                                            )
-                                            .gesture(
-                                                DragGesture()
-                                                    .onChanged { value in
-                                                        draggedTaskID = task.id
-                                                        draggedTaskOffset = value.translation.height
-                                                    }
-                                                    .onEnded { value in
-                                                        if let index = tasks.firstIndex(where: { $0.id == task.id }) {
-                                                            // 移動した位置から新しい時間を計算
-                                                            let newPosition = yPosition + value.translation.height
-                                                            let newHour = Int(newPosition / hourHeight)
-                                                            let newMinute = Int((newPosition.truncatingRemainder(dividingBy: hourHeight) / hourHeight) * 60)
-                                                            
-                                                            // 有効な時間範囲内かチェック
-                                                            if newHour >= 0 && newHour < 24 {
-                                                                // 新しい日時を作成
-                                                                var components = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
-                                                                components.hour = newHour
-                                                                components.minute = newMinute
-                                                                
-                                                                if let newDate = Calendar.current.date(from: components) {
-                                                                    // タスクを更新
-                                                                    var updatedTask = task
-                                                                    updatedTask.dueDate = newDate
-                                                                    tasks[index] = updatedTask
-                                                                }
-                                                            }
-                                                        }
-                                                        
-                                                        // ドラッグ状態をリセット
-                                                        draggedTaskID = nil
-                                                        draggedTaskOffset = 0
-                                                    }
-                                            )
-                                    }
-                                }
-                            }
-                        }
-                        .frame(minHeight: geometry.size.height)
-                    }
-                }
-                
-                // 右下のプラスボタン
-                Button(action: { showingAddTask = true }) {
-                    Image(systemName: "plus")
-                        .font(.title)
-                        .foregroundColor(.white)
-                        .frame(width: 60, height: 60)
-                        .background(Circle().fill(Color.blue))
-                        .shadow(radius: 3)
-                }
-                .padding()
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    HStack {
-                        Button(action: { moveDate(by: -1) }) {
-                            Image(systemName: "chevron.left")
-                        }
-                        
-                        Text(formattedDate)
-                            .font(.headline)
-                        
-                        Button(action: { moveDate(by: 1) }) {
-                            Image(systemName: "chevron.right")
-                        }
-                    }
-                }
-            }
-            .sheet(isPresented: $showingAddTask) {
-                Text("タスク追加")
-            }
+    init() {
+        // TaskServiceの状態を監視
+        taskService.$isLoading
+            .assign(to: \.isLoadingTasks, on: self)
+            .store(in: &cancellables)
+        
+        // タスク取得開始
+        loadTasks()
+    }
+    
+    var tasks: [Task] {
+        taskService.tasks
+    }
+    
+    var tasksForSelectedDate: [Task] {
+        tasks.filter { task in
+            guard let dueDate = task.dueDate else { return false }
+            return Calendar.current.isDate(dueDate, inSameDayAs: selectedDate)
         }
     }
     
-    private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "M月d日"
-        formatter.locale = Locale(identifier: "ja_JP")
-        return formatter.string(from: selectedDate)
+    func tasksByHour() -> [Int: [Task]] {
+        var result = [Int: [Task]]()
+        
+        for task in tasksForSelectedDate {
+            guard let dueDate = task.dueDate else { continue }
+            let hour = Calendar.current.component(.hour, from: dueDate)
+            if result[hour] == nil {
+                result[hour] = [task]
+            } else {
+                result[hour]?.append(task)
+            }
+        }
+        
+        return result
     }
     
-    private func moveDate(by days: Int) {
+    func moveDate(days: Int) {
         if let newDate = Calendar.current.date(byAdding: .day, value: days, to: selectedDate) {
             selectedDate = newDate
         }
     }
     
-    private func calculateYPosition(for date: Date) -> CGFloat {
-        let hour = Calendar.current.component(.hour, from: date)
-        let minute = Calendar.current.component(.minute, from: date)
-        return CGFloat(hour) * hourHeight + CGFloat(minute) * hourHeight / 60
+    func loadTasks() {
+        taskService.fetchTasks()
     }
     
-    private func calculateHeight(for duration: TimeInterval) -> CGFloat {
-        // 秒単位の時間を時間単位に変換して高さを計算
-        return CGFloat(duration / 3600) * hourHeight
-    }
-}
-
-struct TimelineHourRow: View {
-    let hour: Int
-    let hourHeight: CGFloat
-    
-    var body: some View {
-        HStack {
-            Text(String(format: "%02d:00", hour))
-                .font(.caption)
-                .frame(width: 50)
-            
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .frame(height: 1)
-        }
-        .frame(height: hourHeight)
-    }
-}
-
-struct TimelineTaskView: View {
-    let task: Task
-    
-    var body: some View {
-        VStack(alignment: .center) {
-            Text(task.title)
-                .font(.subheadline)
-                .foregroundColor(.white)
-                .padding(.vertical, 4)
-            
-            if let duration = task.duration {
-                Text("\(Int(duration / 60))分")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.8))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(task.color)
+    func addTask(title: String, description: String?, dueDate: Date?, priority: TaskPriority) {
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+        
+        let newTask = Task(
+            title: title,
+            description: description,
+            dueDate: dueDate,
+            priority: priority,
+            userId: userId
         )
+        
+        taskService.addTask(newTask)
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { completion in
+                if case .failure(let error) = completion {
+                    print("タスク追加エラー: \(error.localizedDescription)")
+                }
+            }, receiveValue: { _ in
+                print("タスクが正常に追加されました")
+            })
+            .store(in: &cancellables)
+    }
+    
+    func updateTaskStatus(task: Task, status: TaskStatus) {
+        taskService.updateTaskStatus(taskId: task.id, status: status)
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { completion in
+                if case .failure(let error) = completion {
+                    print("タスクステータス更新エラー: \(error.localizedDescription)")
+                }
+            }, receiveValue: { _ in
+                print("タスクステータスが正常に更新されました: \(task.id) -> \(status.rawValue)")
+            })
+            .store(in: &cancellables)
+    }
+    
+    func getHourRangeFor(hour: Int) -> (start: Date, end: Date) {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
+        components.hour = hour
+        components.minute = 0
+        components.second = 0
+        
+        let startDate = Calendar.current.date(from: components) ?? selectedDate
+        let endDate = Calendar.current.date(byAdding: .hour, value: 1, to: startDate) ?? selectedDate
+        
+        return (startDate, endDate)
+    }
+    
+    func taskDuration(_ task: Task) -> Int {
+        // デフォルトでは60分とする
+        guard let duration = task.estimatedTime else { return 60 }
+        return duration
     }
 }
 
-struct TaskRow: View {
-    let task: Task
+struct TimelineView: View {
+    @StateObject private var viewModel = TimelineViewModel()
     
     var body: some View {
-        HStack {
-            Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(task.isCompleted ? .green : .gray)
-            
-            VStack(alignment: .leading) {
-                Text(task.title)
-                    .strikethrough(task.isCompleted)
+        NavigationView {
+            VStack(spacing: 0) {
+                // 日付セレクター
+                HStack {
+                    Button(action: {
+                        viewModel.moveDate(days: -1)
+                    }) {
+                        Image(systemName: "chevron.left")
+                            .foregroundColor(.blue)
+                            .font(.title2)
+                    }
+                    
+                    Spacer()
+                    
+                    Text(formatDate(viewModel.selectedDate))
+                        .font(.headline)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        viewModel.moveDate(days: 1)
+                    }) {
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(.blue)
+                            .font(.title2)
+                    }
+                }
+                .padding()
                 
-                if let dueDate = task.dueDate {
-                    Text(dueDate, style: .date)
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                // 24時間タイムライン
+                if viewModel.isLoadingTasks {
+                    ProgressView()
+                        .padding()
+                } else {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(0..<24, id: \.self) { hour in
+                                TimeBlockView(hour: hour, tasks: viewModel.tasksByHour()[hour] ?? [])
+                                Divider()
+                            }
+                        }
+                    }
                 }
             }
+            .navigationTitle("タイムライン")
+            .navigationBarItems(
+                trailing: Button(action: {
+                    viewModel.showAddTask = true
+                }) {
+                    Image(systemName: "plus")
+                        .font(.title2)
+                }
+            )
+            .sheet(isPresented: $viewModel.showAddTask) {
+                AddTaskView { title, description, dueDate, priority in
+                    viewModel.addTask(
+                        title: title,
+                        description: description,
+                        dueDate: dueDate,
+                        priority: priority
+                    )
+                }
+            }
+            .onAppear {
+                viewModel.loadTasks()
+            }
+        }
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M月d日"
+        formatter.locale = Locale(identifier: "ja_JP")
+        return formatter.string(from: date)
+    }
+}
+
+struct TimeBlockView: View {
+    let hour: Int
+    let tasks: [Task]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 時間表示
+            HStack {
+                Text(String(format: "%02d:00", hour))
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.primary)
+                    .frame(width: 60, alignment: .leading)
+                    .padding(.leading, 10)
+                
+                Spacer()
+            }
+            .frame(height: 40)
+            
+            // タスク表示
+            ForEach(tasks) { task in
+                TaskTimelineBlockView(task: task)
+                    .padding(.leading, 70)
+                    .padding(.trailing, 10)
+                    .padding(.bottom, 10)
+            }
         }
     }
 }
 
-#Preview {
-    TimelineView()
-} 
+struct TaskTimelineBlockView: View {
+    let task: Task
+    
+    var body: some View {
+        NavigationLink(destination: TaskDetailView(task: task)) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(task.title)
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                
+                if let estimatedTime = task.estimatedTime {
+                    Text("\(estimatedTime)分")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 15)
+            .padding(.horizontal, 20)
+            .background(Color.blue)
+            .cornerRadius(8)
+        }
+    }
+}
+
+// タスク追加画面
+struct AddTaskView: View {
+    @Environment(\.presentationMode) var presentationMode
+    
+    @State private var title: String = ""
+    @State private var description: String = ""
+    @State private var dueDate: Date = Date().addingTimeInterval(60 * 60 * 24) // 明日
+    @State private var showDatePicker: Bool = false
+    @State private var selectedPriority: TaskPriority = .medium
+    @State private var estimatedTime: String = "60"
+    
+    let onAddTask: (String, String?, Date?, TaskPriority) -> Void
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("タスク情報")) {
+                    TextField("タイトル", text: $title)
+                    
+                    TextField("説明（任意）", text: $description)
+                        .frame(height: 100)
+                    
+                    TextField("予定時間（分）", text: $estimatedTime)
+                        .keyboardType(.numberPad)
+                }
+                
+                Section(header: Text("期限")) {
+                    Toggle("期限を設定", isOn: $showDatePicker.animation())
+                    
+                    if showDatePicker {
+                        DatePicker("期限日時", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                            .datePickerStyle(GraphicalDatePickerStyle())
+                    }
+                }
+                
+                Section(header: Text("優先度")) {
+                    Picker("優先度", selection: $selectedPriority) {
+                        ForEach(TaskPriority.allCases, id: \.self) { priority in
+                            HStack {
+                                Circle()
+                                    .fill(Color(priority.color))
+                                    .frame(width: 12, height: 12)
+                                Text(priority.displayName)
+                            }
+                            .tag(priority)
+                        }
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+                }
+                
+                Button(action: {
+                    addTask()
+                }) {
+                    Text("タスクを追加")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(title.isEmpty ? Color.gray : Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .disabled(title.isEmpty)
+                .buttonStyle(BorderlessButtonStyle())
+                .listRowInsets(EdgeInsets())
+                .padding()
+            }
+            .navigationTitle("新しいタスク")
+            .navigationBarItems(trailing: Button("キャンセル") {
+                presentationMode.wrappedValue.dismiss()
+            })
+        }
+    }
+    
+    private func addTask() {
+        var newTask = Task(
+            title: title,
+            description: description.isEmpty ? nil : description,
+            dueDate: showDatePicker ? dueDate : nil,
+            priority: selectedPriority,
+            userId: ""
+        )
+        
+        if let estimatedTimeInt = Int(estimatedTime) {
+            newTask.estimatedTime = estimatedTimeInt
+        }
+        
+        onAddTask(
+            title,
+            description.isEmpty ? nil : description,
+            showDatePicker ? dueDate : nil,
+            selectedPriority
+        )
+        presentationMode.wrappedValue.dismiss()
+    }
+}
+
+struct TimelineView_Previews: PreviewProvider {
+    static var previews: some View {
+        TimelineView()
+    }
+}
 
 

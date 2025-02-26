@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-struct UserProfile: Identifiable, Codable {
+struct UserProfile: Identifiable, Codable, Equatable {
     var id: String
     var email: String
     var displayName: String?
