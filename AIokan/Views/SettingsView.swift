@@ -17,23 +17,16 @@ struct SettingsView: View {
                         Spacer()
                         Text(Auth.auth().currentUser?.email ?? "未ログイン")
                             .foregroundColor(.gray)
+                            .lineLimit(1)
                     }
                     
                     Button(action: {
-                        showingLogoutAlert = true
-                    }) {
-                        Text("ログアウト")
-                            .foregroundColor(.red)
-                    }
-                    
-                    Button(action: {
-                        print("緊急ログアウトボタンがタップされました")
+                        print("ログアウトボタンがタップされました")
                         // 直接ログアウト処理を実行（確認なし）
                         authService.signOut()
                     }) {
-                        Text("緊急ログアウト")
+                        Text("ログアウト")
                             .foregroundColor(.red)
-                            .font(.caption)
                     }
                 }
                 
