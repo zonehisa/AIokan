@@ -14,7 +14,7 @@ class TaskService: ObservableObject {
     private let db = Firestore.firestore()
     private let tasksCollection = "tasks"
     
-    @Published var tasks: [Task] = []
+    @Published private(set) var tasks: [Task] = []
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     
@@ -89,6 +89,7 @@ class TaskService: ObservableObject {
     func updateTask(_ task: Task) -> AnyPublisher<Task, Error> {
         return Future<Task, Error> { [weak self] promise in
             guard let self = self else {
+                print("🔴 サービスが利用できません")
                 promise(.failure(NSError(domain: "TaskService", code: -1, userInfo: [NSLocalizedDescriptionKey: "サービスが利用できません"])))
                 return
             }
@@ -97,18 +98,26 @@ class TaskService: ObservableObject {
             var updatedTask = task
             updatedTask.updatedAt = Date()
             
+            print("🟢 Firestoreタスク更新開始: ID=\(task.id)")
+            if let scheduledTime = updatedTask.scheduledTime {
+                print("🟢 更新予定の予定時間: \(scheduledTime)")
+            }
+            
             // Firestoreデータに変換
             let taskData = updatedTask.toFirestore()
             
             // Firestoreを更新
             self.db.collection(self.tasksCollection).document(task.id).updateData(taskData) { error in
                 if let error = error {
-                    print("タスク更新エラー: \(error.localizedDescription)")
+                    print("🔴 タスク更新エラー: \(error.localizedDescription)")
                     promise(.failure(error))
                     return
                 }
                 
-                print("タスク更新成功: \(task.id)")
+                print("🟢 タスク更新成功: \(task.id)")
+                if let scheduledTime = updatedTask.scheduledTime {
+                    print("🟢 更新された予定時間: \(scheduledTime)")
+                }
                 promise(.success(updatedTask))
             }
         }

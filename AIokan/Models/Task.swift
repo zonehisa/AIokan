@@ -77,6 +77,7 @@ struct Task: Identifiable, Codable {
     var createdAt: Date
     var updatedAt: Date
     var dueDate: Date?
+    var scheduledTime: Date? // 予定開始時間
     var status: TaskStatus
     var priority: TaskPriority
     var notificationTime: Date?
@@ -99,6 +100,7 @@ struct Task: Identifiable, Codable {
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         dueDate: Date? = nil,
+        scheduledTime: Date? = nil,
         status: TaskStatus = .pending,
         priority: TaskPriority = .medium,
         notificationTime: Date? = nil,
@@ -120,6 +122,7 @@ struct Task: Identifiable, Codable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.dueDate = dueDate
+        self.scheduledTime = scheduledTime
         self.status = status
         self.priority = priority
         self.notificationTime = notificationTime
@@ -176,6 +179,13 @@ struct Task: Identifiable, Codable {
             dueDate = nil
         }
         
+        let scheduledTime: Date?
+        if let timestamp = data["scheduledTime"] as? Timestamp {
+            scheduledTime = timestamp.dateValue()
+        } else {
+            scheduledTime = nil
+        }
+        
         let notificationTime: Date?
         if let timestamp = data["notificationTime"] as? Timestamp {
             notificationTime = timestamp.dateValue()
@@ -199,6 +209,7 @@ struct Task: Identifiable, Codable {
             createdAt: createdAt,
             updatedAt: updatedAt,
             dueDate: dueDate,
+            scheduledTime: scheduledTime,
             status: status,
             priority: priority,
             notificationTime: notificationTime,
@@ -237,6 +248,10 @@ struct Task: Identifiable, Codable {
         
         if let dueDate = dueDate {
             data["dueDate"] = Timestamp(date: dueDate)
+        }
+        
+        if let scheduledTime = scheduledTime {
+            data["scheduledTime"] = Timestamp(date: scheduledTime)
         }
         
         if let notificationTime = notificationTime {

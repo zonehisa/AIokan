@@ -14,8 +14,10 @@ class TaskDetailViewModel: ObservableObject {
     @Published var editedTitle: String
     @Published var editedDescription: String
     @Published var editedDueDate: Date?
+    @Published var editedScheduledTime: Date?
     @Published var editedPriority: TaskPriority
     @Published var editedStatus: TaskStatus
+    @Published var editedEstimatedTime: String
     @Published var isSaving: Bool = false
     @Published var errorMessage: String?
     
@@ -27,8 +29,10 @@ class TaskDetailViewModel: ObservableObject {
         self.editedTitle = task.title
         self.editedDescription = task.description ?? ""
         self.editedDueDate = task.dueDate
+        self.editedScheduledTime = task.scheduledTime
         self.editedPriority = task.priority
         self.editedStatus = task.status
+        self.editedEstimatedTime = String(task.estimatedTime ?? 60)
     }
     
     func updateTask() {
@@ -38,8 +42,10 @@ class TaskDetailViewModel: ObservableObject {
         updatedTask.title = editedTitle
         updatedTask.description = editedDescription.isEmpty ? nil : editedDescription
         updatedTask.dueDate = editedDueDate
+        updatedTask.scheduledTime = editedScheduledTime
         updatedTask.priority = editedPriority
         updatedTask.status = editedStatus
+        updatedTask.estimatedTime = Int(editedEstimatedTime) ?? 60
         updatedTask.updatedAt = Date()
         
         taskService.updateTask(updatedTask)
@@ -84,8 +90,10 @@ class TaskDetailViewModel: ObservableObject {
             editedTitle = task.title
             editedDescription = task.description ?? ""
             editedDueDate = task.dueDate
+            editedScheduledTime = task.scheduledTime
             editedPriority = task.priority
             editedStatus = task.status
+            editedEstimatedTime = String(task.estimatedTime ?? 60)
         }
         isEditing = editing
     }
@@ -254,6 +262,65 @@ struct TaskDetailView: View {
                 }
             }
             
+            // 予定時間
+            VStack(alignment: .leading, spacing: 5) {
+                Text("予定実行時間")
+                    .font(.headline)
+                
+                if viewModel.isEditing {
+                    Toggle("予定時間を設定", isOn: Binding<Bool>(
+                        get: { viewModel.editedScheduledTime != nil },
+                        set: { if !$0 { viewModel.editedScheduledTime = nil } }
+                    ))
+                    
+                    if viewModel.editedScheduledTime != nil {
+                        DatePicker(
+                            "予定実行時間",
+                            selection: Binding<Date>(
+                                get: { viewModel.editedScheduledTime ?? Date() },
+                                set: { viewModel.editedScheduledTime = $0 }
+                            ),
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+                    }
+                } else if let scheduledTime = viewModel.task.scheduledTime {
+                    Text(formatDate(scheduledTime))
+                        .font(.body)
+                        .padding(.vertical, 5)
+                } else {
+                    Text("設定なし")
+                        .foregroundColor(.gray)
+                        .padding(.vertical, 5)
+                }
+            }
+            
+            // 所要時間
+            VStack(alignment: .leading, spacing: 5) {
+                Text("所要時間")
+                    .font(.headline)
+                
+                if viewModel.isEditing {
+                    HStack {
+                        TextField("所要時間（分）", text: $viewModel.editedEstimatedTime)
+                            .keyboardType(.numberPad)
+                            .padding(8)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(5)
+                        
+                        Text("分")
+                            .padding(.leading, 4)
+                    }
+                } else if let estimatedTime = viewModel.task.estimatedTime {
+                    Text("\(estimatedTime) 分")
+                        .font(.body)
+                        .padding(.vertical, 5)
+                } else {
+                    Text("設定なし")
+                        .foregroundColor(.gray)
+                        .padding(.vertical, 5)
+                }
+            }
+            
             // 期限
             VStack(alignment: .leading, spacing: 5) {
                 Text("期限")
@@ -408,7 +475,7 @@ struct TaskDetailView: View {
                 .frame(maxWidth: .infinity)
             }
             .padding()
-            .background(Color.red)
+            .background(Color(UIColor.systemRed))
             .foregroundColor(.white)
             .cornerRadius(10)
         }
