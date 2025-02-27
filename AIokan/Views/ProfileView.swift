@@ -100,7 +100,7 @@ struct ProfileView: View {
     private func saveProfile() {
         guard let user = Auth.auth().currentUser,
               var profile = userService.currentUserProfile else {
-            return
+            return  
         }
         
         profile.displayName = displayName
