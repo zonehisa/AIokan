@@ -13,6 +13,10 @@ import CryptoKit
 import GoogleSignIn
 import GoogleSignInSwift
 import FirebaseCore
+import UIKit
+import SwiftUI
+
+// ConfigurationManagerをインポート
 
 // プレゼンテーションコンテキストプロバイダークラス
 class AppleAuthorizationPresentation: NSObject, ASAuthorizationControllerPresentationContextProviding {
@@ -58,9 +62,9 @@ class AuthService: NSObject, ObservableObject {
         
         // Firebaseの認証状態変更リスナーを設定
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
-            guard let self = self else { 
+            guard let self = self else {
                 print("警告: AuthStateListener - selfが解放されています")
-                return 
+                return
             }
             
             print("認証状態変更検出: userID = \(user?.uid ?? "なし")")
@@ -139,11 +143,11 @@ class AuthService: NSObject, ObservableObject {
                 }
                 
                 // ユーザープロファイルを作成
-                guard let self = self else { 
+                guard let self = self else {
                     // selfが解放されていてもユーザー作成自体は成功しているので、成功として扱う
                     print("AuthService: self解放のためプロファイル作成をスキップ")
                     promise(.success(user))
-                    return 
+                    return
                 }
                 
                 print("AuthService: ユーザープロファイル作成開始 - \(user.uid)")
@@ -168,9 +172,13 @@ class AuthService: NSObject, ObservableObject {
     }
     
     func signInWithGoogle() {
-        // Googleログイン処理の実装
-        guard let clientID = FirebaseCore.FirebaseApp.app()?.options.clientID else { return }
-        _ = GIDConfiguration(clientID: clientID)
+        // ConfigurationManagerを使用してクライアントIDを取得
+        guard let clientID = ConfigurationManager.shared.googleClientID else {
+            print("GoogleClientIDの取得に失敗しました")
+            return
+        }
+        
+        let config = GIDConfiguration(clientID: clientID)
         
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController else {
@@ -178,7 +186,7 @@ class AuthService: NSObject, ObservableObject {
             return
         }
         
-        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { [weak self] result, error in
+        GIDSignIn.sharedInstance.signIn(with: config, presenting: rootViewController) { [weak self] result, error in
             if let error = error {
                 print("Googleログインエラー: \(error.localizedDescription)")
                 return
@@ -189,12 +197,12 @@ class AuthService: NSObject, ObservableObject {
                 return
             }
             
-            guard let idToken = result.user.idToken?.tokenString else {
+            guard let idToken = result.idToken?.tokenString else {
                 print("認証情報の取得に失敗しました")
                 return
             }
             
-            let accessToken = result.user.accessToken.tokenString
+            let accessToken = result.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
             
             Auth.auth().signIn(with: credential) { [weak self] authResult, error in
@@ -246,9 +254,9 @@ class AuthService: NSObject, ObservableObject {
                     return
                 }
                 
-                guard let user = authResult?.user else { 
+                guard let user = authResult?.user else {
                     print("モック認証: ユーザーが取得できませんでした")
-                    return 
+                    return
                 }
                 print("モック認証成功: \(user.uid)")
                 
@@ -260,9 +268,9 @@ class AuthService: NSObject, ObservableObject {
                 }
                 
                 // ユーザープロファイルを作成
-                guard let self = self else { 
+                guard let self = self else {
                     print("モック認証: selfが解放されました")
-                    return 
+                    return
                 }
                 self.userService.createUserProfile(user: user)
                     .sink(receiveCompletion: { completion in
@@ -381,4 +389,4 @@ extension AuthService: ASAuthorizationControllerDelegate {
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         print("Apple Sign Inエラー: \(error.localizedDescription)")
     }
-} 
+}
