@@ -126,7 +126,7 @@ struct LoginView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.red)
+                        .background(Color(UIColor.systemRed))
                         .cornerRadius(10)
                 }
                 .padding(.horizontal)

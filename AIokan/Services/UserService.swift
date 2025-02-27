@@ -21,7 +21,7 @@ class UserService: ObservableObject {
     init() {
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             if let user = user {
-                self?.fetchUserProfile(userId: user.uid)
+                self?.ensureUserProfile(user: user)
             } else {
                 self?.currentUserProfile = nil
             }
@@ -42,8 +42,27 @@ class UserService: ObservableObject {
                 return
             }
             
+            guard let self = self else { return }
+            
+            // プロファイルが存在しない場合、現在のAuthユーザー情報を取得して作成を試みる
             guard let snapshot = snapshot, snapshot.exists else {
                 print("UserService: ユーザープロファイルが存在しません: \(userId)")
+                
+                // 現在のAuthユーザーを取得してプロファイルを作成
+                if let currentUser = Auth.auth().currentUser, currentUser.uid == userId {
+                    print("UserService: 現在のユーザーのプロファイルを作成します: \(userId)")
+                    self.createUserProfile(user: currentUser)
+                        .receive(on: DispatchQueue.main)
+                        .sink(receiveCompletion: { completion in
+                            if case .failure(let error) = completion {
+                                print("UserService: プロファイル作成失敗: \(error)")
+                            }
+                        }, receiveValue: { profile in
+                            print("UserService: プロファイル作成成功: \(profile.id)")
+                            self.currentUserProfile = profile
+                        })
+                        .store(in: &self.cancellables)
+                }
                 return
             }
             
@@ -65,12 +84,46 @@ class UserService: ObservableObject {
                 if let userProfile = UserProfile.fromFirestoreData(firestoreData) {
                     DispatchQueue.main.async {
                         print("UserService: ユーザープロファイル設定（メインスレッド）: \(userId)")
-                        self?.currentUserProfile = userProfile
+                        self.currentUserProfile = userProfile
                         print("UserService: 現在のユーザープロファイル更新完了: \(userId)")
                     }
                 } else {
                     print("UserService: ユーザープロファイルの変換に失敗: \(userId)")
                 }
+            }
+        }
+    }
+    
+    // 新しいメソッド: ユーザープロファイルの存在を確認し、必要に応じて作成
+    func ensureUserProfile(user: User) {
+        print("UserService: ユーザープロファイル確認: \(user.uid)")
+        
+        db.collection(usersCollection).document(user.uid).getDocument { [weak self] snapshot, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("UserService: ユーザープロファイル確認エラー: \(error)")
+                return
+            }
+            
+            // プロファイルが存在する場合は通常の取得処理
+            if let snapshot = snapshot, snapshot.exists {
+                print("UserService: ユーザープロファイルが存在します: \(user.uid)")
+                self.fetchUserProfile(userId: user.uid)
+            } else {
+                // プロファイルが存在しない場合は新規作成
+                print("UserService: ユーザープロファイルが存在しません。作成します: \(user.uid)")
+                self.createUserProfile(user: user)
+                    .receive(on: DispatchQueue.main)
+                    .sink(receiveCompletion: { completion in
+                        if case .failure(let error) = completion {
+                            print("UserService: プロファイル作成失敗: \(error)")
+                        }
+                    }, receiveValue: { profile in
+                        print("UserService: プロファイル作成成功: \(profile.id)")
+                        self.currentUserProfile = profile
+                    })
+                    .store(in: &self.cancellables)
             }
         }
     }

@@ -50,6 +50,12 @@ class AuthService: NSObject, ObservableObject {
         
         print("AuthService初期化: 現在のユーザー = \(currentUser?.uid ?? "なし"), isAuthenticated = \(isAuthenticated)")
         
+        // ユーザーがすでにログインしている場合、プロファイルを確認・作成
+        if let currentUser = currentUser {
+            print("AuthService: 現在のユーザーのプロファイルを確認します: \(currentUser.uid)")
+            self.userService.ensureUserProfile(user: currentUser)
+        }
+        
         // Firebaseの認証状態変更リスナーを設定
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             guard let self = self else { 
@@ -72,7 +78,12 @@ class AuthService: NSObject, ObservableObject {
                 print("認証状態変更: \(oldAuthenticated) -> \(newAuthenticated), userId = \(user?.uid ?? "なし")")
                 
                 if let user = user {
+                    // 最終ログイン日時を更新
                     self.userService.updateLastLogin(userId: user.uid)
+                    
+                    // ユーザープロファイルを確認・作成
+                    print("AuthStateListener: ユーザープロファイルを確認します: \(user.uid)")
+                    self.userService.ensureUserProfile(user: user)
                 }
             }
         }

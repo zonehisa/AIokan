@@ -48,16 +48,21 @@ class WeeklyTasksViewModel: ObservableObject {
         taskService.fetchTasks()
     }
     
-    func addTask(title: String, description: String?, dueDate: Date?, priority: TaskPriority) {
+    func addTask(title: String, description: String?, dueDate: Date?, priority: TaskPriority, estimatedTime: Int? = nil, scheduledTime: Date? = nil) {
         guard let userId = Auth.auth().currentUser?.uid else { return }
         
-        let newTask = Task(
+        var newTask = Task(
             title: title,
             description: description,
             dueDate: dueDate,
+            scheduledTime: scheduledTime,
             priority: priority,
             userId: userId
         )
+        
+        if let estimatedTime = estimatedTime {
+            newTask.estimatedTime = estimatedTime
+        }
         
         taskService.addTask(newTask)
             .receive(on: DispatchQueue.main)
@@ -200,12 +205,14 @@ struct WeeklyTasksView: View {
                 }
             )
             .sheet(isPresented: $viewModel.showAddTask) {
-                WeeklyAddTaskView { title, description, dueDate, priority in
+                SharedAddTaskView(viewTitle: "新しいタスク") { title, description, dueDate, priority, estimatedTime, scheduledTime in
                     viewModel.addTask(
                         title: title,
                         description: description,
                         dueDate: dueDate,
-                        priority: priority
+                        priority: priority,
+                        estimatedTime: estimatedTime,
+                        scheduledTime: scheduledTime
                     )
                 }
             }
@@ -316,85 +323,6 @@ struct TaskRowView: View {
         case .completed:
             return .green
         }
-    }
-}
-
-// タスク追加画面
-struct WeeklyAddTaskView: View {
-    @Environment(\.presentationMode) var presentationMode
-    
-    @State private var title: String = ""
-    @State private var description: String = ""
-    @State private var dueDate: Date = Date().addingTimeInterval(60 * 60 * 24) // 明日
-    @State private var showDatePicker: Bool = false
-    @State private var selectedPriority: TaskPriority = .medium
-    
-    let onAddTask: (String, String?, Date?, TaskPriority) -> Void
-    
-    var body: some View {
-        NavigationView {
-            Form {
-                Section(header: Text("タスク情報")) {
-                    TextField("タイトル", text: $title)
-                    
-                    TextField("説明（任意）", text: $description)
-                        .frame(height: 100)
-                }
-                
-                Section(header: Text("期限")) {
-                    Toggle("期限を設定", isOn: $showDatePicker.animation())
-                    
-                    if showDatePicker {
-                        DatePicker("期限日時", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
-                            .datePickerStyle(GraphicalDatePickerStyle())
-                    }
-                }
-                
-                Section(header: Text("優先度")) {
-                    Picker("優先度", selection: $selectedPriority) {
-                        ForEach(TaskPriority.allCases, id: \.self) { priority in
-                            HStack {
-                                Circle()
-                                    .fill(Color(priority.color))
-                                    .frame(width: 12, height: 12)
-                                Text(priority.displayName)
-                            }
-                            .tag(priority)
-                        }
-                    }
-                    .pickerStyle(SegmentedPickerStyle())
-                }
-                
-                Button(action: {
-                    addTask()
-                }) {
-                    Text("タスクを追加")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(title.isEmpty ? Color.gray : Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
-                }
-                .disabled(title.isEmpty)
-                .buttonStyle(BorderlessButtonStyle())
-                .listRowInsets(EdgeInsets())
-                .padding()
-            }
-            .navigationTitle("新しいタスク")
-            .navigationBarItems(trailing: Button("キャンセル") {
-                presentationMode.wrappedValue.dismiss()
-            })
-        }
-    }
-    
-    private func addTask() {
-        onAddTask(
-            title,
-            description.isEmpty ? nil : description,
-            showDatePicker ? dueDate : nil,
-            selectedPriority
-        )
-        presentationMode.wrappedValue.dismiss()
     }
 }
 
