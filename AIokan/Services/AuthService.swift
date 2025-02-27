@@ -172,7 +172,7 @@ class AuthService: NSObject, ObservableObject {
     }
     
     func signInWithGoogle() {
-        // ConfigurationManagerを使用してクライアントID
+        // ConfigurationManagerを使用してクライアントIDを取得
         guard let clientID = ConfigurationManager.shared.googleClientID else {
             print("GoogleClientIDの取得に失敗しました")
             return
@@ -186,23 +186,27 @@ class AuthService: NSObject, ObservableObject {
             return
         }
         
-        GIDSignIn.sharedInstance.signIn(with: config, presenting: rootViewController) { [weak self] gidUser, error in
+        // 型アノテーションを明示的に指定
+        GIDSignIn.sharedInstance.signIn(
+            with: config,
+            presenting: rootViewController
+        ) { [weak self] (gidSignInResult: GIDGoogleUser?, error: Error?) in
             if let error = error {
                 print("Googleログインエラー: \(error.localizedDescription)")
                 return
             }
             
-            guard let gidUser = gidUser else {
+            guard let gidSignInResult = gidSignInResult else {
                 print("認証情報の取得に失敗しました")
                 return
             }
             
-            guard let idToken = gidUser.idToken?.tokenString else {
+            guard let idToken = gidSignInResult.idToken?.tokenString else {
                 print("認証情報の取得に失敗しました")
                 return
             }
             
-            let accessToken = gidUser.accessToken.tokenString
+            let accessToken = gidSignInResult.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
             
             Auth.auth().signIn(with: credential) { [weak self] authResult, error in
