@@ -39,6 +39,15 @@ class TimelineViewModel: ObservableObject {
     @Published var draggedTask: TaskDragItem? = nil
     @Published var isDragging: Bool = false
     @Published var dragLocation: CGPoint = .zero
+    @Published var zoomLevel: CGFloat = 1.0 {
+        didSet {
+            // zoomLevelが変更されたらhourBlockHeightも更新
+            updateHourBlockHeight()
+        }
+    }
+    @Published var minZoom: CGFloat = 0.5
+    @Published var maxZoom: CGFloat = 2.0
+    @Published var hourBlockHeight: CGFloat = 150.0
     
     private var taskService = TaskService()
     private var timer: Timer?
@@ -59,6 +68,9 @@ class TimelineViewModel: ObservableObject {
         
         // 現在時刻を更新するタイマーを設定
         startTimer()
+        
+        // 初期設定
+        updateHourBlockHeight()
     }
     
     deinit {
@@ -264,12 +276,34 @@ class TimelineViewModel: ObservableObject {
             return Color(UIColor.systemGreen)
         }
     }
+    
+    func zoomOut() {
+        zoomLevel = max(minZoom, zoomLevel - 0.1)
+    }
+    
+    func zoomIn() {
+        zoomLevel = min(maxZoom, zoomLevel + 0.1)
+    }
+    
+    func resetZoom() {
+        zoomLevel = 1.0
+    }
+    
+    // ズームレベルに応じて時間ブロックの高さを更新
+    private func updateHourBlockHeight() {
+        // 基本の高さ（150）にズームレベルを掛ける
+        hourBlockHeight = 150.0 * zoomLevel
+        print("ズームレベル: \(zoomLevel), 時間ブロック高さ: \(hourBlockHeight)")
+    }
 }
 
 // TimelineView
 struct TimelineView: View {
     @StateObject private var viewModel = TimelineViewModel()
     @State private var scrollPosition: CGFloat = 0
+    @State private var currentScale: CGFloat = 1.0
+    @State private var lastScaleValue: CGFloat = 1.0
+    @State private var dragOffset = CGSize.zero
     
     var body: some View {
         NavigationView {
@@ -284,10 +318,6 @@ struct TimelineView: View {
                             .padding()
                     } else {
                         timelineScrollView
-                            .onChange(of: viewModel.dragLocation) { location in
-                                // ドラッグ中の位置が変更されたらスクロール処理
-                                handleAutoScroll(at: location)
-                            }
                     }
                 }
                 
@@ -353,27 +383,64 @@ struct TimelineView: View {
                 }
                 .frame(height: 0)
                 
-                VStack(spacing: 0) {
-                    ForEach(0..<24, id: \.self) { hour in
-                        TimeBlockView(hour: hour, viewModel: viewModel)
-                            .id(hour)
-                    }
-                }
-                .background(
-                    // 現在時刻インジケーター
-                    currentTimeIndicator
-                )
+                // タイムラインコンテンツ
+                timelineContent
+                    .background(currentTimeIndicator)
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { value in
+                                // ズーム感度を調整（0.02を掛けることで変化を緩やかに）
+                                let scaleDelta = (value - 1.0) * 0.02
+                                let newScale = lastScaleValue + scaleDelta
+                                
+                                // 最小・最大の範囲内に制限
+                                let boundedScale = min(max(newScale, viewModel.minZoom), viewModel.maxZoom)
+                                
+                                // ズームレベルを更新
+                                currentScale = boundedScale
+                                viewModel.zoomLevel = boundedScale
+                                
+                                // 変化が大きい場合はフィードバック
+                                if abs(viewModel.zoomLevel - lastScaleValue) > 0.05 {
+                                    let generator = UIImpactFeedbackGenerator(style: .light)
+                                    generator.impactOccurred()
+                                    lastScaleValue = viewModel.zoomLevel  // フィードバック基準を更新
+                                }
+                            }
+                            .onEnded { _ in
+                                // ズームが終了したときの処理
+                                withAnimation(.easeInOut(duration: 0.1)) { // アニメーションの速度を調整
+                                    lastScaleValue = viewModel.zoomLevel
+                                    currentScale = viewModel.zoomLevel
+                                }
+                            }
+                    )
             }
             .coordinateSpace(name: "scrollView")
             .onPreferenceChange(ViewOffsetKey.self) { offset in
                 scrollPosition = offset
             }
             .onAppear {
-                // 現在時刻のブロックまでスクロール
+                // 初期表示時に現在時刻付近にスクロール
                 let currentHour = Calendar.current.component(.hour, from: Date())
                 withAnimation {
                     proxy.scrollTo(max(0, currentHour - 1), anchor: .top)
                 }
+                
+                // 初期値を設定
+                currentScale = viewModel.zoomLevel
+                lastScaleValue = viewModel.zoomLevel
+            }
+        }
+    }
+    
+    // タイムラインのメインコンテンツ
+    private var timelineContent: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<24, id: \.self) { hour in
+                TimeBlockView(hour: hour, viewModel: viewModel)
+                    .id(hour)
+                    .frame(height: viewModel.hourBlockHeight)
             }
         }
     }
@@ -381,7 +448,7 @@ struct TimelineView: View {
     private var currentTimeIndicator: some View {
         GeometryReader { geometry in
             if Calendar.current.isDate(viewModel.currentTime, inSameDayAs: viewModel.selectedDate) {
-                let hourHeight: CGFloat = 150
+                let hourHeight = viewModel.hourBlockHeight
                 let calendar = Calendar.current
                 let hour = CGFloat(calendar.component(.hour, from: viewModel.currentTime))
                 let minute = CGFloat(calendar.component(.minute, from: viewModel.currentTime))
@@ -431,11 +498,6 @@ struct TimelineView: View {
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: viewModel.currentTime)
     }
-    
-    // オートスクロール処理
-    private func handleAutoScroll(at location: CGPoint) {
-        // 実装は省略（必要に応じて実装）
-    }
 }
 
 // スクロール位置を追跡するためのPreferenceKey
@@ -471,7 +533,7 @@ struct TimeBlockView: View {
                 // ドロップエリア
                 Rectangle()
                     .fill(Color.clear)
-                    .frame(height: 120)
+                    .frame(height: viewModel.hourBlockHeight - 30) // ヘッダー分を引く
                     .contentShape(Rectangle())
                     .onDrop(of: [UTType.text.identifier], isTargeted: nil) { providers, location in
                         guard let draggedTask = viewModel.draggedTask else { return false }
@@ -489,14 +551,14 @@ struct TimeBlockView: View {
                 // この時間帯のタスク一覧
                 ForEach(viewModel.tasksByHour()[hour] ?? [], id: \.id) { task in
                     TaskView(task: task, viewModel: viewModel)
-                        .padding(.top, CGFloat(viewModel.getTaskMinute(task)) * 2)  // 分に応じて配置
+                        .padding(.top, CGFloat(viewModel.getTaskMinute(task)) * CGFloat(viewModel.zoomLevel) * 2)  // 分に応じて配置（ズーム対応）
                         .padding(.leading, 70)  // 時間表示分の余白
                 }
             }
-            .frame(height: 120)
+            .frame(height: viewModel.hourBlockHeight - 30) // ヘッダー分を引く
+            
+            Spacer()
         }
-        .frame(height: 150)
-        .padding(.bottom, 0)
     }
 }
 
