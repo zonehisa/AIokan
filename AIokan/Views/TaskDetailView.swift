@@ -264,29 +264,39 @@ struct TaskDetailView: View {
             
             // 予定時間
             VStack(alignment: .leading, spacing: 5) {
-                Text("予定実行時間")
+                Text("開始予定時間")
                     .font(.headline)
                 
                 if viewModel.isEditing {
-                    Toggle("予定時間を設定", isOn: Binding<Bool>(
+                    Toggle("開始時間を設定", isOn: Binding<Bool>(
                         get: { viewModel.editedScheduledTime != nil },
-                        set: { if !$0 { viewModel.editedScheduledTime = nil } }
+                        set: { if !$0 { viewModel.editedScheduledTime = nil } else { viewModel.editedScheduledTime = Date().addingTimeInterval(3600) } }
                     ))
                     
                     if viewModel.editedScheduledTime != nil {
                         DatePicker(
-                            "予定実行時間",
+                            "開始時間",
                             selection: Binding<Date>(
                                 get: { viewModel.editedScheduledTime ?? Date() },
                                 set: { viewModel.editedScheduledTime = $0 }
                             ),
                             displayedComponents: [.date, .hourAndMinute]
                         )
+                        .datePickerStyle(CompactDatePickerStyle())
+                        .padding(.vertical, 5)
+                        
+                        Text("※ 開始時間の30分前に通知が届きます")
+                            .font(.caption)
+                            .foregroundColor(.gray)
                     }
                 } else if let scheduledTime = viewModel.task.scheduledTime {
                     Text(formatDate(scheduledTime))
                         .font(.body)
                         .padding(.vertical, 5)
+                    
+                    Text("※ 開始時間の30分前に通知が届きます")
+                        .font(.caption)
+                        .foregroundColor(.gray)
                 } else {
                     Text("設定なし")
                         .foregroundColor(.gray)
@@ -329,7 +339,7 @@ struct TaskDetailView: View {
                 if viewModel.isEditing {
                     Toggle("期限を設定", isOn: Binding<Bool>(
                         get: { viewModel.editedDueDate != nil },
-                        set: { if !$0 { viewModel.editedDueDate = nil } }
+                        set: { if !$0 { viewModel.editedDueDate = nil } else { viewModel.editedDueDate = Date().addingTimeInterval(3600 * 24) } }
                     ))
                     
                     if viewModel.editedDueDate != nil {
@@ -341,12 +351,26 @@ struct TaskDetailView: View {
                             ),
                             displayedComponents: [.date, .hourAndMinute]
                         )
+                        .datePickerStyle(CompactDatePickerStyle())
+                        .padding(.vertical, 5)
+                        
+                        if viewModel.editedScheduledTime == nil {
+                            Text("※ 開始予定時間が設定されていない場合、期限が開始時間として扱われます")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
                     }
                 } else if let dueDate = viewModel.task.dueDate {
                     Text(formatDate(dueDate))
                         .font(.body)
                         .foregroundColor(isDueDateNear(dueDate) ? .red : .primary)
                         .padding(.vertical, 5)
+                    
+                    if viewModel.task.scheduledTime == nil {
+                        Text("※ 開始予定時間が設定されていないため、期限が開始時間として扱われます")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
                 } else {
                     Text("設定なし")
                         .foregroundColor(.gray)

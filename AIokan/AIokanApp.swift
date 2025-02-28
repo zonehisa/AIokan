@@ -11,6 +11,7 @@ import GoogleSignIn
 
 // ConfigurationManagerを使用するための追加インポート
 import Foundation
+import UserNotifications
 
 class AppDelegate: NSObject, UIApplicationDelegate {
   func application(_ application: UIApplication,
@@ -21,6 +22,15 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     if let clientID = ConfigurationManager.shared.googleClientID {
         let config = GIDConfiguration(clientID: clientID)
         GIDSignIn.sharedInstance.configuration = config
+    }
+    
+    // 通知権限をリクエスト
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+        if granted {
+            print("通知権限が許可されました")
+        } else if let error = error {
+            print("通知権限のリクエストに失敗しました: \(error.localizedDescription)")
+        }
     }
     
     return true
@@ -38,11 +48,13 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 struct AIokanApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authService = AuthService()
+    @StateObject private var notificationService = NotificationService.shared
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(authService)
+                .environmentObject(notificationService)
                 .onOpenURL { url in
                     print("onOpenURL: \(url)")
                     GIDSignIn.sharedInstance.handle(url)

@@ -20,6 +20,9 @@ class TaskService: ObservableObject {
     
     private var cancellables = Set<AnyCancellable>()
     
+    // NotificationServiceのシングルトンインスタンスを参照
+    private let notificationService = NotificationService.shared
+    
     // タスク一覧の取得
     func fetchTasks() {
         guard let currentUser = Auth.auth().currentUser else {
@@ -67,19 +70,30 @@ class TaskService: ObservableObject {
                 return
             }
             
+            // scheduledTimeがnilでdueDateが設定されている場合は、dueDateをscheduledTimeとして使用
+            var updatedTask = task
+            if updatedTask.scheduledTime == nil && updatedTask.dueDate != nil {
+                updatedTask.scheduledTime = updatedTask.dueDate
+                print("予定時間が設定されていないため、期限日時を予定時間として使用します")
+            }
+            
             // Firestoreデータに変換
-            let taskData = task.toFirestore()
+            let taskData = updatedTask.toFirestore()
             
             // Firestoreに保存
-            self.db.collection(self.tasksCollection).document(task.id).setData(taskData) { error in
+            self.db.collection(self.tasksCollection).document(updatedTask.id).setData(taskData) { error in
                 if let error = error {
                     print("タスク追加エラー: \(error.localizedDescription)")
                     promise(.failure(error))
                     return
                 }
                 
-                print("タスク追加成功: \(task.id)")
-                promise(.success(task))
+                print("タスク追加成功: \(updatedTask.id)")
+                
+                // タスク通知をスケジュール
+                self.notificationService.scheduleTaskNotification(for: updatedTask)
+                
+                promise(.success(updatedTask))
             }
         }
         .eraseToAnyPublisher()
@@ -98,9 +112,10 @@ class TaskService: ObservableObject {
             var updatedTask = task
             updatedTask.updatedAt = Date()
             
-            print("🟢 Firestoreタスク更新開始: ID=\(task.id)")
-            if let scheduledTime = updatedTask.scheduledTime {
-                print("🟢 更新予定の予定時間: \(scheduledTime)")
+            // scheduledTimeがnilでdueDateが設定されている場合は、dueDateをscheduledTimeとして使用
+            if updatedTask.scheduledTime == nil && updatedTask.dueDate != nil {
+                updatedTask.scheduledTime = updatedTask.dueDate
+                print("予定時間が設定されていないため、期限日時を予定時間として使用します")
             }
             
             // Firestoreデータに変換
@@ -109,15 +124,16 @@ class TaskService: ObservableObject {
             // Firestoreを更新
             self.db.collection(self.tasksCollection).document(task.id).updateData(taskData) { error in
                 if let error = error {
-                    print("🔴 タスク更新エラー: \(error.localizedDescription)")
+                    print("タスク更新エラー: \(error.localizedDescription)")
                     promise(.failure(error))
                     return
                 }
                 
-                print("🟢 タスク更新成功: \(task.id)")
-                if let scheduledTime = updatedTask.scheduledTime {
-                    print("🟢 更新された予定時間: \(scheduledTime)")
-                }
+                print("タスク更新成功: \(task.id)")
+                
+                // タスク通知をスケジュール（既存の通知は自動的にキャンセルされます）
+                self.notificationService.scheduleTaskNotification(for: updatedTask)
+                
                 promise(.success(updatedTask))
             }
         }
