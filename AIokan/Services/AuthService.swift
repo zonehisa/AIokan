@@ -172,41 +172,47 @@ class AuthService: NSObject, ObservableObject {
     }
     
     func signInWithGoogle() {
-        // ConfigurationManagerを使用してクライアントIDを取得
-        guard let clientID = ConfigurationManager.shared.googleClientID else {
-            print("GoogleClientIDの取得に失敗しました")
+        // メインスレッドで実行することを確認
+        if !Thread.isMainThread {
+            print("警告: signInWithGoogleがメインスレッド以外で呼び出されています")
+            DispatchQueue.main.async {
+                self.signInWithGoogle()
+            }
             return
         }
         
-        let config = GIDConfiguration(clientID: clientID)
+        print("Google認証開始")
         
+        // ルートビューコントローラーの取得方法を改善
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController else {
             print("ルートビューコントローラーが見つかりません")
             return
         }
         
-        // 型アノテーションを明示的に指定
-        GIDSignIn.sharedInstance.signIn(
-            withPresenting: rootViewController
-        ) { [weak self] signInResult, error in
+        print("ルートビューコントローラー取得成功: \(type(of: rootViewController))")
+        
+        // GoogleSignInの現在のAPIに合わせて修正 - シンプル化
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { [weak self] result, error in
             if let error = error {
                 print("Googleログインエラー: \(error.localizedDescription)")
                 return
             }
             
-            guard let signInResult = signInResult else {
+            guard let result = result else {
                 print("認証情報の取得に失敗しました")
                 return
             }
             
-            guard let idToken = signInResult.user.idToken?.tokenString else {
-                print("認証情報の取得に失敗しました")
+            guard let idToken = result.user.idToken?.tokenString else {
+                print("IDトークンの取得に失敗しました")
                 return
             }
             
-            let accessToken = signInResult.user.accessToken.tokenString
+            let accessToken = result.user.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
+            
+            print("Firebase認証開始: IDトークンとアクセストークンを取得しました")
             
             Auth.auth().signIn(with: credential) { [weak self] authResult, error in
                 if let error = error {
@@ -216,6 +222,7 @@ class AuthService: NSObject, ObservableObject {
                 
                 // ユーザープロファイルを作成または更新
                 if let user = authResult?.user {
+                    print("Firebase認証成功: ユーザーID \(user.uid)")
                     guard let self = self else { return }
                     self.userService.createUserProfile(user: user)
                         .sink(receiveCompletion: { completion in

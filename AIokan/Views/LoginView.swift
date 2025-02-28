@@ -61,7 +61,13 @@ class LoginViewModel: ObservableObject {
 struct LoginView: View {
     // AuthServiceをEnvironmentObjectとして外部から取得
     @EnvironmentObject var authService: AuthService
-    @StateObject private var viewModel = LoginViewModel(authService: AuthService())
+    @StateObject private var viewModel: LoginViewModel
+    
+    init() {
+        // StateObjectを初期化するときにnilを渡すことはできないので、一時的なインスタンスを作成
+        // onAppearでEnvironmentObjectからのインスタンスに置き換える
+        _viewModel = StateObject(wrappedValue: LoginViewModel(authService: AuthService()))
+    }
     
     var body: some View {
         NavigationView {
