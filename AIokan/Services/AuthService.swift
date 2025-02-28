@@ -186,24 +186,26 @@ class AuthService: NSObject, ObservableObject {
             return
         }
         
-        // GIDSignIn.sharedInstanceのsignInメソッドを直接呼び出し
-        GIDSignIn.sharedInstance.signIn(with: config, presenting: rootViewController) { user, error in
+        // 型アノテーションを明示的に指定
+        GIDSignIn.sharedInstance.signIn(
+            withPresenting: rootViewController
+        ) { [weak self] signInResult, error in
             if let error = error {
                 print("Googleログインエラー: \(error.localizedDescription)")
                 return
             }
             
-            guard let user = user else {
+            guard let signInResult = signInResult else {
                 print("認証情報の取得に失敗しました")
                 return
             }
             
-            guard let idToken = user.idToken?.tokenString else {
+            guard let idToken = signInResult.user.idToken?.tokenString else {
                 print("認証情報の取得に失敗しました")
                 return
             }
             
-            let accessToken = user.accessToken.tokenString
+            let accessToken = signInResult.user.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
             
             Auth.auth().signIn(with: credential) { [weak self] authResult, error in
