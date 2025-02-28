@@ -16,7 +16,7 @@ import FirebaseCore
 import UIKit
 import SwiftUI
 
-// ConfigurationManagerをインポート
+// ConfigurationManagerはすでに同じモジュール内にあるので明示的なインポートは不要
 
 // プレゼンテーションコンテキストプロバイダークラス
 class AppleAuthorizationPresentation: NSObject, ASAuthorizationControllerPresentationContextProviding {
@@ -186,27 +186,24 @@ class AuthService: NSObject, ObservableObject {
             return
         }
         
-        // 型アノテーションを明示的に指定
-        GIDSignIn.sharedInstance.signIn(
-            with: config,
-            presenting: rootViewController
-        ) { [weak self] (gidSignInResult: GIDGoogleUser?, error: Error?) in
+        // GIDSignIn.sharedInstanceのsignInメソッドを直接呼び出し
+        GIDSignIn.sharedInstance.signIn(with: config, presenting: rootViewController) { user, error in
             if let error = error {
                 print("Googleログインエラー: \(error.localizedDescription)")
                 return
             }
             
-            guard let gidSignInResult = gidSignInResult else {
+            guard let user = user else {
                 print("認証情報の取得に失敗しました")
                 return
             }
             
-            guard let idToken = gidSignInResult.idToken?.tokenString else {
+            guard let idToken = user.idToken?.tokenString else {
                 print("認証情報の取得に失敗しました")
                 return
             }
             
-            let accessToken = gidSignInResult.accessToken.tokenString
+            let accessToken = user.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
             
             Auth.auth().signIn(with: credential) { [weak self] authResult, error in
