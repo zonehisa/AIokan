@@ -1050,6 +1050,341 @@ _****_
 
 ---
 
+_****_
+
+```diff
+          cancelExistingTaskNotifications(for: task.id)
+          
+-         // タスクの予定時間が設定されていて、未来の時間であれば通知をスケジュール
+-         if let scheduledTime = task.scheduledTime, scheduledTime > Date() {
++         // タスクの通知時間を決定（優先順位: scheduledTime > dueDate）
++         var notificationBaseTime: Date?
++         var timeTypeDescription: String = ""
++         
++         if let scheduledTime = task.scheduledTime {
++             notificationBaseTime = scheduledTime
++             timeTypeDescription = "開始時間"
++             print("予定時間に基づいて通知をスケジュールします: \(scheduledTime)")
++         } else if let dueDate = task.dueDate {
++             notificationBaseTime = dueDate
++             timeTypeDescription = "期限"
++             print("期限日時に基づいて通知をスケジュールします: \(dueDate)")
++         }
++         
++         // 通知基準時間が設定されていて、未来の時間であれば通知をスケジュール
++         if let baseTime = notificationBaseTime, baseTime > Date() {
+              // 30分前の時間を計算
+-             let notificationTime = scheduledTime.addingTimeInterval(-30 * 60)
++             let notificationTime = baseTime.addingTimeInterval(-30 * 60)
+              
+              // 現在時刻より未来であれば通知をスケジュール
+                  let content = UNMutableNotificationContent()
+                  content.title = "AIオカンからのお知らせ"
+-                 content.body = "「\(task.title)」の開始時間まであと30分です"
++                 content.body = "「\(task.title)」の\(timeTypeDescription)まであと30分です"
+                  content.sound = .default
+                  
+              }
+          } else {
+-             print("タスクの予定時間が設定されていないか、過去の時間のため通知はスケジュールされません")
++             print("タスクの予定時間も期限も設定されていないか、過去の時間のため通知はスケジュールされません")
+          }
+      }
+```
+
+---
+
+_****_
+
+
+
+
+
+
+
+次に、UIからscheduledTimeを入力できるようにするために、TaskDetailViewを編集します。まずこのファイルの内容を確認します。
+
+---
+
+_****_
+
+<details>
+            <summary>Searched codebase "TaskDetailView" • **1** results</summary>
+        
+| File |
+|------|
+| `undefined` |
+
+</details>
+
+---
+
+_****_
+
+
+
+
+
+
+
+
+
+---
+
+_****_
+
+Read file: AIokan/Views/TaskDetailView.swift
+
+---
+
+_****_
+
+
+
+
+
+
+
+引き続きTaskDetailViewを探索して、scheduledTimeの入力場所を特定します。
+
+---
+
+_****_
+
+Read file: AIokan/Views/TaskDetailView.swift
+
+---
+
+_****_
+
+
+
+
+
+
+
+
+
+statusAndDueDateSectionおよび他の部分でscheduledTimeの入力があるか確認します。
+
+---
+
+_****_
+
+Read file: AIokan/Views/TaskDetailView.swift
+
+---
+
+_****_
+
+
+
+
+
+
+
+もう少しTaskDetailViewを確認します。
+
+---
+
+_****_
+
+Read file: AIokan/Views/TaskDetailView.swift
+
+---
+
+_****_
+
+
+
+
+
+
+
+
+
+
+
+すでにTaskDetailViewにscheduledTime入力機能が実装されていますが、整形してさらに使いやすくします。
+
+---
+
+_****_
+
+```diff
+              // 予定時間
+              VStack(alignment: .leading, spacing: 5) {
+-                 Text("予定実行時間")
++                 Text("開始予定時間")
+                      .font(.headline)
+                  
+                  if viewModel.isEditing {
+-                     Toggle("予定時間を設定", isOn: Binding<Bool>(
++                     Toggle("開始時間を設定", isOn: Binding<Bool>(
+                          get: { viewModel.editedScheduledTime != nil },
+-                         set: { if !$0 { viewModel.editedScheduledTime = nil } }
++                         set: { if !$0 { viewModel.editedScheduledTime = nil } else { viewModel.editedScheduledTime = Date().addingTimeInterval(3600) } }
+                      ))
+                      
+                      if viewModel.editedScheduledTime != nil {
+                          DatePicker(
+-                             "予定実行時間",
++                             "開始時間",
+                              selection: Binding<Date>(
+                                  get: { viewModel.editedScheduledTime ?? Date() },
+                              displayedComponents: [.date, .hourAndMinute]
+                          )
++                         .datePickerStyle(CompactDatePickerStyle())
++                         .padding(.vertical, 5)
++                         
++                         Text("※ 開始時間の30分前に通知が届きます")
++                             .font(.caption)
++                             .foregroundColor(.gray)
+                      }
+                  } else if let scheduledTime = viewModel.task.scheduledTime {
+                      Text(formatDate(scheduledTime))
+                          .font(.body)
+                          .padding(.vertical, 5)
++                     
++                     Text("※ 開始時間の30分前に通知が届きます")
++                         .font(.caption)
++                         .foregroundColor(.gray)
+                  } else {
+                      Text("設定なし")
+```
+
+---
+
+_****_
+
+
+
+
+
+
+
+
+
+最後に、期限と予定時間の関係についても説明を追加します。
+
+---
+
+_****_
+
+```diff
+                      Toggle("期限を設定", isOn: Binding<Bool>(
+                          get: { viewModel.editedDueDate != nil },
+-                         set: { if !$0 { viewModel.editedDueDate = nil } }
++                         set: { if !$0 { viewModel.editedDueDate = nil } else { viewModel.editedDueDate = Date().addingTimeInterval(3600 * 24) } }
+                      ))
+                      
+                              displayedComponents: [.date, .hourAndMinute]
+                          )
++                         .datePickerStyle(CompactDatePickerStyle())
++                         .padding(.vertical, 5)
++                         
++                         if viewModel.editedScheduledTime == nil {
++                             Text("※ 開始予定時間が設定されていない場合、期限が開始時間として扱われます")
++                                 .font(.caption)
++                                 .foregroundColor(.gray)
++                         }
+                      }
+                  } else if let dueDate = viewModel.task.dueDate {
+                          .foregroundColor(isDueDateNear(dueDate) ? .red : .primary)
+                          .padding(.vertical, 5)
++                     
++                     if viewModel.task.scheduledTime == nil {
++                         Text("※ 開始予定時間が設定されていないため、期限が開始時間として扱われます")
++                             .font(.caption)
++                             .foregroundColor(.gray)
++                     }
+                  } else {
+                      Text("設定なし")
+```
+
+---
+
+_****_
+
+
+
+
+
+
+
+
+
+
+
+
+これで実装が完了しました。変更内容をコミットします。
+
+---
+
+_****_
+
+```bash
+git add . && git commit -m "予定時間の30分前通知機能を実装。UI改善と説明追加" && git status
+```
+
+```
+$ git add . && git commit -m "予定時間の30分前通知機能を実装。UI改善と説明追加" && git status
+[feature/notification-30min-before 3b305c9] 予定時間の30分前通知機能を実装。UI改善と説明追加
+ 8 files changed, 11865 insertions(+), 17 deletions(-)
+ create mode 100644 .specstory/history/2025-02-28_10-56-通知機能の実装準備.md
+ create mode 100644 .specstory/history/2025-02-28_16-43-ai-notification-for-task-reminder.md
+ create mode 100644 AIokan/Services/NotificationService.swift
+On branch feature/notification-30min-before
+nothing to commit, working tree clean
+iroiropro@Iropro:~/swift-camp/AIokan (feature/notification-30min-before)
+$
+```
+
+---
+
+_****_
+
+
+
+以下の機能を実装しました：
+
+1. **TaskServiceの改善**：
+   - タスク作成・更新時に、`scheduledTime`が設定されていない場合は`dueDate`を自動的に使用するようにしました
+   - これにより、期限があるタスクでも適切に通知が設定されるようになりました
+
+2. **NotificationServiceの強化**：
+   - 通知基準時間の優先順位を設定（`scheduledTime` > `dueDate`）
+   - 通知メッセージに「開始時間」か「期限」かを明示
+   - タスクの予定時間の30分前に通知を表示
+
+3. **UIの改善**：
+   - 「予定実行時間」から「開始予定時間」にラベルを変更し、わかりやすく
+   - トグルをONにした時に自動的に日時を設定（使いやすさの向上）
+   - 通知のタイミングについての説明を追加
+   - 開始予定時間と期限の関係性についての説明を追加
+
+これらの変更により、ユーザーは以下のことが可能になりました：
+- タスクの開始予定時間を明示的に設定でき、その30分前に通知を受け取れる
+- 開始予定時間を設定しなかった場合でも、期限が自動的に使用される
+- 通知がいつ届くのかがUIで明確に理解できる
+
+通知機能によって、AIオカンがタスクの開始前に適切なタイミングでリマインドしてくれるようになり、ユーザーの生産性向上に貢献します。
+
+---
+
+_**User**_
+
+いまの状態をプッシュしてプルリク出したい
+
+---
+
+_**Assistant**_
+
+<think>
+ユーザーはいまの状態をプッシュしてプルリクエスト（プルリク）を出したいと依頼しています。現在のコードベースの変更を Git にプッシュし、プルリクエストを作成
+
+---
+
 
 
 ---
