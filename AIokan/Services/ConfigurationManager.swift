@@ -24,6 +24,18 @@ class ConfigurationManager {
         return nil
     }
     
+    // Gemini APIキー
+    var geminiAPIKey: String? {
+        // Secretsファイルからキーを取得
+        if let apiKey = loadSecretValue(for: "GeminiAPIKey") as? String {
+            print("ConfigurationManager: GeminiのAPIキーを取得しました")
+            return apiKey
+        }
+        
+        print("⚠️ ConfigurationManager: GeminiのAPIキーが設定されていません")
+        return nil
+    }
+    
     // URLスキーム
     var googleURLScheme: String? {
         if let urlTypes = loadSecretValue(for: "CFBundleURLTypes") as? [[String: Any]],

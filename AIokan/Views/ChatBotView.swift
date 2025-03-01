@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct Message: Identifiable {
+struct Message: Identifiable, Equatable {
     let id = UUID()
     let content: String
     let isFromUser: Bool
@@ -21,13 +21,22 @@ struct ChatBotView: View {
         NavigationView {
             VStack {
                 // ---- メッセージ一覧表示 ----
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(messages) { message in
-                            MessageBubble(message: message)
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(messages) { message in
+                                MessageBubble(message: message)
+                                    .id(message.id) // 各メッセージにIDを設定
+                            }
                         }
+                        .padding()
+                        .onChange(of: messages, perform: { _ in
+                            // 最新のメッセージにスクロール
+                            if let lastMessage = messages.last {
+                                scrollProxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
+                        })
                     }
-                    .padding()
                 }
 
                 // ---- 画像プレビューを左側に表示 ----
@@ -115,40 +124,64 @@ struct ChatBotView: View {
         newMessage = ""
         capturedImage = nil
 
-        // 3. 画像がある場合はアップロードしてからワークフロー呼び出し
+        // 3. 画像がある場合は処理
         if let image = imageToSend {
-            DifyAPI.uploadImage(image: image) { result in
+            // 画像を送信する処理をここに追加
+            uploadImage(image) { result in
                 switch result {
-                case .success(let json):
-                    // アップロード成功 → json には {"id":..., "name":..., ...} などが入っている想定
-                    if let fileId = json["id"] as? String {
-                        // アップロードしたファイルIDを使ってワークフロー実行
-                        runDifyWorkflow(fileId: fileId, text: textToSend)
-                    } else {
-                        print("ファイルIDが見つかりません")
+                case .success(let imageUrl):
+                    // 画像のURLをメッセージとして送信
+                    let imageMessage = Message(content: imageUrl, isFromUser: false, timestamp: Date())
+                    messages.append(imageMessage)
+
+                    // Gemini APIを呼び出す
+                    callGeminiAPI(with: imageUrl) { response in
+                        // Gemini APIのレスポンスを処理
+                        let geminiMessage = Message(content: response, isFromUser: false, timestamp: Date())
+                        messages.append(geminiMessage)
                     }
                 case .failure(let error):
-                    print("画像アップロード失敗: \(error.localizedDescription)")
+                    print("画像送信エラー: \(error.localizedDescription)")
+                    // エラーメッセージを表示
+                    let errorMessage = Message(content: "画像の送信中にエラーが発生しました。", isFromUser: false, timestamp: Date())
+                    messages.append(errorMessage)
                 }
             }
         } else {
-            // 画像がない場合はテキストだけワークフローに送る
-            runDifyWorkflow(fileId: nil, text: textToSend)
+            // 画像がない場合はテキストのみで処理
+            // Gemini APIを呼び出す処理をここに追加
+            callGeminiAPI(with: textToSend) { response in
+                let geminiMessage = Message(content: response, isFromUser: false, timestamp: Date())
+                messages.append(geminiMessage)
+            }
         }
+
+        // キーボードを閉じる
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
-    // 画像の有無にかかわらずワークフローを呼ぶ共通処理
+    // 画像をアップロードする関数の例
+    private func uploadImage(_ image: UIImage, completion: @escaping (Result<String, Error>) -> Void) {
+        // ここに画像をアップロードする処理を実装
+        // 成功した場合は画像のURLを返す
+        // 失敗した場合はエラーを返す
+    }
+
+    // Gemini APIを呼び出す関数
+    private func callGeminiAPI(with input: String, completion: @escaping (String) -> Void) {
+        // API呼び出しの実装
+        // ここでGemini APIにリクエストを送信し、レスポンスを受け取る処理を実装します
+        // 成功した場合はcompletionにレスポンスを渡す
+        // 失敗した場合はエラーハンドリングを行う
+    }
+
+    // 古いDify用メソッド（互換性のために残していますが使用しないでください）
     private func runDifyWorkflow(fileId: String?, text: String) {
-        DifyAPI.runWorkflow(fileId: fileId, text: text) { result in
-            switch result {
-            case .success(let reply):
-                DispatchQueue.main.async {
-                    let responseMessage = Message(content: reply, isFromUser: false, timestamp: Date())
-                    messages.append(responseMessage)
-                }
-            case .failure(let error):
-                print("ワークフロー実行エラー: \(error.localizedDescription)")
-            }
+        print("警告: 古いrunDifyWorkflowメソッドが呼び出されました。代わりにGemini APIを使用してください。")
+        // 「互換性のないAPIです」というメッセージを表示
+        DispatchQueue.main.async {
+            let errorMessage = Message(content: "申し訳ありませんが、このAPIは現在利用できません。", isFromUser: false, timestamp: Date())
+            messages.append(errorMessage)
         }
     }
 
@@ -160,6 +193,13 @@ struct MessageBubble: View {
         HStack {
             if message.isFromUser {
                 Spacer()
+            } else {
+                // ロゴのイメージを表示
+                Image("logo") // ロゴの画像名を指定
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50) // サイズを調整
+                    .clipShape(Circle())
             }
 
             VStack(alignment: message.isFromUser ? .trailing : .leading) {

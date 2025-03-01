@@ -6,162 +6,265 @@ enum APIError: Error {
     case noData
     case invalidResponse
     case uploadFailed
+    case jsonEncodingError
+    case apiError(String)
 }
 
-struct DifyAPI {
-    // Difyのファイルアップロードエンドポイント (例: https://api.dify.ai/v1/files/upload)
-    static let fileUploadEndpoint = "https://api.dify.ai/v1/files/upload"
-
-    // ワークフロー実行のエンドポイント例 (必要なら)
-    static let workflowEndpoint = "https://api.dify.ai/v1/workflows/run"
-
-    /// DifyのファイルアップロードAPIを使って画像をアップロードする
+struct GeminiAPI {
+    // Gemini 1.5 Flashモデルのエンドポイント
+    static let textGenerationEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    static let visionGenerationEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-vision:generateContent"
+    
+    // APIキーの取得メソッド
+    private static func getAPIKey() -> String? {
+        return ConfigurationManager.shared.geminiAPIKey
+    }
+    
+    /// テキスト生成API
     /// - Parameters:
-    ///   - image: アップロードしたい UIImage
-    ///   - searchable: 画像を全文検索対象にする場合は 1（true）、しない場合は 0（false）
-    ///   - completion: 成功時は JSON の内容(例: ["id": ..., "name": ...])、失敗時はエラーを返す
-    static func uploadImage(image: UIImage,
-                            searchable: Bool = true,
-                            completion: @escaping (Result<[String: Any], Error>) -> Void) {
-
-        guard let url = URL(string: fileUploadEndpoint) else {
+    ///   - prompt: 入力テキスト
+    ///   - completion: 結果のコールバック
+    static func generateText(prompt: String, completion: @escaping (Result<String, Error>) -> Void) {
+        guard let apiKey = getAPIKey() else {
+            completion(.failure(APIError.apiError("APIキーが設定されていません")))
+            return
+        }
+        
+        // URLを構築
+        guard var urlComponents = URLComponents(string: textGenerationEndpoint) else {
             completion(.failure(APIError.invalidURL))
             return
         }
-
-        // UIImage を JPEG に変換
+        
+        // クエリパラメータにAPIキーを追加
+        urlComponents.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+        
+        guard let url = urlComponents.url else {
+            completion(.failure(APIError.invalidURL))
+            return
+        }
+        
+        // リクエストボディを作成 - Gemini 2.0向けに最適化
+        let requestBody: [String: Any] = [
+            "contents": [
+                [
+                    "role": "user",
+                    "parts": [
+                        ["text": prompt]
+                    ]
+                ]
+            ],
+            "generationConfig": [
+                "temperature": 0.7,
+                "topK": 40,
+                "topP": 0.95,
+                "maxOutputTokens": 2048,
+                "responseMimeType": "text/plain"
+            ],
+            "safetySettings": [
+                [
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_NONE"
+                ],
+                [
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                ],
+                [
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                ],
+                [
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                ]
+            ]
+        ]
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
+        } catch {
+            completion(.failure(APIError.jsonEncodingError))
+            return
+        }
+        
+        // リクエスト実行
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+            
+            guard let data = data else {
+                completion(.failure(APIError.noData))
+                return
+            }
+            
+            // デバッグ用：レスポンスの内容を出力
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("Gemini 1.5 Flash APIレスポンス: \(responseString)")
+            }
+            
+            // JSONをパース
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+                    // エラーチェック
+                    if let error = json["error"] as? [String: Any],
+                       let message = error["message"] as? String {
+                        completion(.failure(APIError.apiError(message)))
+                        return
+                    }
+                    
+                    // 成功レスポンスのパース - Gemini 2.0の応答形式に対応
+                    if let candidates = json["candidates"] as? [[String: Any]],
+                       let firstCandidate = candidates.first,
+                       let content = firstCandidate["content"] as? [String: Any],
+                       let parts = content["parts"] as? [[String: Any]],
+                       let firstPart = parts.first,
+                       let text = firstPart["text"] as? String {
+                        completion(.success(text))
+                        return
+                    }
+                    
+                    completion(.failure(APIError.invalidResponse))
+                } else {
+                    completion(.failure(APIError.invalidResponse))
+                }
+            } catch {
+                completion(.failure(error))
+            }
+        }.resume()
+    }
+    
+    /// 画像とテキストを使った生成API
+    /// - Parameters:
+    ///   - prompt: テキストプロンプト
+    ///   - image: 画像
+    ///   - completion: 結果のコールバック
+    static func generateFromImageAndText(prompt: String, image: UIImage, completion: @escaping (Result<String, Error>) -> Void) {
+        guard let apiKey = getAPIKey() else {
+            completion(.failure(APIError.apiError("APIキーが設定されていません")))
+            return
+        }
+        
+        // URLを構築
+        guard var urlComponents = URLComponents(string: visionGenerationEndpoint) else {
+            completion(.failure(APIError.invalidURL))
+            return
+        }
+        
+        // クエリパラメータにAPIキーを追加
+        urlComponents.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+        
+        guard let url = urlComponents.url else {
+            completion(.failure(APIError.invalidURL))
+            return
+        }
+        
+        // 画像をBase64エンコード
         guard let imageData = image.jpegData(compressionQuality: 0.8) else {
             completion(.failure(APIError.uploadFailed))
             return
         }
-
-        // マルチパートフォームデータの boundary
-        let boundary = "Boundary-\(UUID().uuidString)"
-
-        // multipart/form-data のボディを組み立てる
-        var body = Data()
-
-        // 1. searchable フィールド
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"searchable\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(searchable ? 1 : 0)\r\n".data(using: .utf8)!)
-
-        // 2. file フィールド
-        let filename = "upload.jpg"
-        let mimeType = "image/jpeg"
-
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
-        body.append(imageData)
-        body.append("\r\n".data(using: .utf8)!)
-
-        // 終了 boundary
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-
-        // URLRequest の設定
+        
+        let base64Image = imageData.base64EncodedString()
+        
+        // リクエストボディを作成 - Gemini 2.0向けに最適化
+        let requestBody: [String: Any] = [
+            "contents": [
+                [
+                    "role": "user",
+                    "parts": [
+                        ["text": prompt],
+                        [
+                            "inline_data": [
+                                "mime_type": "image/jpeg",
+                                "data": base64Image
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            "generationConfig": [
+                "temperature": 0.7,
+                "topK": 40,
+                "topP": 0.95,
+                "maxOutputTokens": 2048,
+                "responseMimeType": "text/plain"
+            ],
+            "safetySettings": [
+                [
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_NONE"
+                ],
+                [
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                ],
+                [
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                ],
+                [
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_ONLY_HIGH"
+                ]
+            ]
+        ]
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.addValue("Bearer \(Secrets.difyAPIKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-
-        // 通信開始
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(.failure(error))
-                return
-            }
-
-            guard let data = data else {
-                completion(.failure(APIError.noData))
-                return
-            }
-
-            // レスポンス文字列をログ出力
-            if let responseString = String(data: data, encoding: .utf8) {
-                print("アップロードレスポンス: \(responseString)")
-            }
-
-            // JSONパース
-            do {
-                if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                    // 正常時は {"id":..., "name":..., "size":..., ...} のようなJSONが返る想定
-                    completion(.success(json))
-                } else {
-                    completion(.failure(APIError.invalidResponse))
-                }
-            } catch {
-                completion(.failure(error))
-            }
-        }.resume()
-    }
-
-    /// ワークフロー実行のサンプル（画像の file_id を inputs に渡す例）
-    static func runWorkflow(fileId: String?, text: String, completion: @escaping (Result<String, Error>) -> Void) {
-
-        guard let url = URL(string: workflowEndpoint) else {
-            completion(.failure(APIError.invalidURL))
-            return
-        }
-
-        // ワークフローが想定している入力に合わせて "inputs" を構築
-        var inputs: [String: Any] = [
-            "text": text
-        ]
-
-        // 画像を使うワークフローの場合は file_id を渡す
-        if let fileId = fileId {
-            inputs["file_id"] = fileId
-        }
-
-        // リクエストボディ例
-        let body: [String: Any] = [
-            "inputs": inputs,
-            "user": "user_1234"
-        ]
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.addValue("Bearer \(Secrets.difyAPIKey)", forHTTPHeaderField: "Authorization")
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-
+        
         do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody, options: [])
         } catch {
-            completion(.failure(error))
+            completion(.failure(APIError.jsonEncodingError))
             return
         }
-
+        
+        // リクエスト実行
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
                 completion(.failure(error))
                 return
             }
-
+            
             guard let data = data else {
                 completion(.failure(APIError.noData))
                 return
             }
-
+            
+            // デバッグ用：レスポンスの内容を出力
             if let responseString = String(data: data, encoding: .utf8) {
-                print("ワークフロー実行レスポンス: \(responseString)")
+                print("Gemini 1.5 Flash Vision APIレスポンス: \(responseString)")
             }
-
-            // JSONパース後、実際のキーに合わせて取り出す
+            
+            // JSONをパース
             do {
                 if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-                    // 例: "data" -> "outputs" -> "text" に返信が入っている場合
-                    if let dataDict = json["data"] as? [String: Any],
-                       let outputs = dataDict["outputs"] as? [String: Any],
-                       let replyText = outputs["text"] as? String {
-                        completion(.success(replyText))
+                    // エラーチェック
+                    if let error = json["error"] as? [String: Any],
+                       let message = error["message"] as? String {
+                        completion(.failure(APIError.apiError(message)))
                         return
                     }
-
-                    // 他のパターンを探す (replyキー、choicesなど)
-                    // ...
-
+                    
+                    // 成功レスポンスのパース - Gemini 2.0の応答形式に対応
+                    if let candidates = json["candidates"] as? [[String: Any]],
+                       let firstCandidate = candidates.first,
+                       let content = firstCandidate["content"] as? [String: Any],
+                       let parts = content["parts"] as? [[String: Any]],
+                       let firstPart = parts.first,
+                       let text = firstPart["text"] as? String {
+                        completion(.success(text))
+                        return
+                    }
+                    
                     completion(.failure(APIError.invalidResponse))
                 } else {
                     completion(.failure(APIError.invalidResponse))
@@ -172,3 +275,6 @@ struct DifyAPI {
         }.resume()
     }
 }
+
+// 古いAPIの参照との互換性のために別名を定義
+typealias DifyAPI = GeminiAPI
