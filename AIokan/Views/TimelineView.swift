@@ -80,8 +80,12 @@ class TimelineViewModel: ObservableObject {
     func startTimer() {
         // 1分ごとに現在時刻を更新
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.currentTime = Date()
+            self?.updateCurrentTime()
         }
+    }
+    
+    func updateCurrentTime() {
+        self.currentTime = Date()
     }
     
     func stopTimer() {
@@ -340,6 +344,8 @@ struct TimelineView: View {
         }
         .onAppear {
             viewModel.loadTasks()
+            viewModel.updateCurrentTime() // 現在時刻を即座に更新
+            viewModel.startTimer() // タイマーを明示的に再開
         }
         .onDisappear {
             viewModel.stopTimer()
@@ -467,6 +473,10 @@ struct TimelineView: View {
                 .position(x: geometry.size.width / 2, y: position)
             }
         }
+        .onReceive(viewModel.$currentTime) { _ in
+            // 現在時刻が更新されたときに再描画をトリガー
+            // ここで何もする必要はありませんが、SwiftUIが再描画を行います
+        }
     }
     
     private var addButton: some View {
@@ -490,12 +500,15 @@ struct TimelineView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "M月d日"
         formatter.locale = Locale(identifier: "ja_JP")
+        formatter.timeZone = TimeZone(identifier: "Asia/Tokyo")
         return formatter.string(from: date)
     }
     
     private func formatCurrentTime() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.timeZone = TimeZone(identifier: "Asia/Tokyo")
         return formatter.string(from: viewModel.currentTime)
     }
 }
@@ -644,6 +657,8 @@ struct TaskView: View {
     private func formatTaskTime(_ task: Task) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.timeZone = TimeZone(identifier: "Asia/Tokyo")
         
         if let scheduledTime = task.scheduledTime {
             return "予定: \(formatter.string(from: scheduledTime))"

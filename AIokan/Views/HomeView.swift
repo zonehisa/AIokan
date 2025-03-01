@@ -72,6 +72,7 @@ struct HomeView: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         formatter.locale = Locale(identifier: "ja_JP")
+        formatter.timeZone = TimeZone(identifier: "Asia/Tokyo")
         return formatter.string(from: date)
     }
 }
