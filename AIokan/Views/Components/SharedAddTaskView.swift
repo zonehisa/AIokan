@@ -15,12 +15,23 @@ struct SharedAddTaskView: View {
     @State private var estimatedTime: String = "60"
     @Environment(\.presentationMode) var presentationMode
     
+    // 日本のタイムゾーンを設定
+    private let japanTimeZone = TimeZone(identifier: "Asia/Tokyo")!
+    
     init(
         viewTitle: String = "新しいタスク",
         onAddTask: @escaping (String, String?, Date?, TaskPriority, Int?, Date?) -> Void
     ) {
         self.viewTitle = viewTitle
         self.onAddTask = onAddTask
+        
+        // DatePickerで使用するCalendarの設定
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        calendar.locale = Locale(identifier: "ja_JP")
+        // UIDatePickerのデフォルト設定を変更
+        UIDatePicker.appearance().timeZone = TimeZone(identifier: "Asia/Tokyo")
+        UIDatePicker.appearance().calendar = calendar
     }
     
     var body: some View {

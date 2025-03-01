@@ -494,12 +494,15 @@ struct TimelineView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "M月d日"
         formatter.locale = Locale(identifier: "ja_JP")
+        formatter.timeZone = TimeZone(identifier: "Asia/Tokyo")
         return formatter.string(from: date)
     }
     
     private func formatCurrentTime() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.timeZone = TimeZone(identifier: "Asia/Tokyo")
         return formatter.string(from: viewModel.currentTime)
     }
 }
@@ -648,6 +651,8 @@ struct TaskView: View {
     private func formatTaskTime(_ task: Task) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.timeZone = TimeZone(identifier: "Asia/Tokyo")
         
         if let scheduledTime = task.scheduledTime {
             return "予定: \(formatter.string(from: scheduledTime))"
