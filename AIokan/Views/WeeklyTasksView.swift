@@ -110,89 +110,100 @@ class WeeklyTasksViewModel: ObservableObject {
 struct WeeklyTasksView: View {
     @StateObject private var viewModel = WeeklyTasksViewModel()
     @State private var editingTask: Task?
+    @State private var showConfetti: Bool = false
     
     var body: some View {
         NavigationView {
-            VStack {
-                // フィルター部分
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 15) {
-                        FilterButton(
-                            title: "すべて",
-                            isSelected: viewModel.selectedFilter == nil,
-                            action: { viewModel.selectedFilter = nil }
-                        )
-                        
-                        ForEach(TaskStatus.allCases, id: \.self) { status in
+            ZStack {
+                VStack {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 15) {
                             FilterButton(
-                                title: status.displayName,
-                                isSelected: viewModel.selectedFilter == status,
-                                action: { viewModel.selectedFilter = status }
+                                title: "すべて",
+                                isSelected: viewModel.selectedFilter == nil,
+                                action: { viewModel.selectedFilter = nil }
                             )
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                .padding(.top)
-                
-                // 検索バー
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
-                    
-                    TextField("タスクを検索", text: $viewModel.searchText)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                    
-                    if !viewModel.searchText.isEmpty {
-                        Button(action: {
-                            viewModel.searchText = ""
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
-                    }
-                }
-                .padding()
-                .background(Color(.systemGray6))
-                .cornerRadius(10)
-                .padding(.horizontal)
-                
-                if viewModel.isLoadingTasks {
-                    ProgressView()
-                        .padding()
-                } else if viewModel.filteredTasks.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "list.bullet.clipboard")
-                            .font(.system(size: 60))
-                            .foregroundColor(.gray)
-                        
-                        Text("タスクがありません")
-                            .font(.headline)
-                            .foregroundColor(.gray)
-                        
-                        Button(action: {
-                            viewModel.showAddTask = true
-                        }) {
-                            Text("タスクを追加")
-                                .foregroundColor(.white)
-                                .padding()
-                                .background(Color.blue)
-                                .cornerRadius(10)
-                        }
-                    }
-                    .padding(.top, 50)
-                } else {
-                    List {
-                        ForEach(viewModel.filteredTasks) { task in
-                            NavigationLink(destination: TaskDetailView(task: task)) {
-                                TaskRowView(task: task) {
-                                    viewModel.updateTaskStatus(task: task, status: .completed)
-                                }
+                            
+                            ForEach(TaskStatus.allCases, id: \.self) { status in
+                                FilterButton(
+                                    title: status.displayName,
+                                    isSelected: viewModel.selectedFilter == status,
+                                    action: { viewModel.selectedFilter = status }
+                                )
                             }
                         }
-                        .onDelete(perform: viewModel.deleteTask)
+                        .padding(.horizontal)
                     }
+                    .padding(.top)
+                    
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.gray)
+                        
+                        TextField("タスクを検索", text: $viewModel.searchText)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        
+                        if !viewModel.searchText.isEmpty {
+                            Button(action: {
+                                viewModel.searchText = ""
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+                    
+                    if viewModel.isLoadingTasks {
+                        ProgressView()
+                            .padding()
+                    } else if viewModel.filteredTasks.isEmpty {
+                        VStack(spacing: 20) {
+                            Image(systemName: "list.bullet.clipboard")
+                                .font(.system(size: 60))
+                                .foregroundColor(.gray)
+                            
+                            Text("タスクがありません")
+                                .font(.headline)
+                                .foregroundColor(.gray)
+                            
+                            Button(action: {
+                                viewModel.showAddTask = true
+                            }) {
+                                Text("タスクを追加")
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .cornerRadius(10)
+                            }
+                        }
+                        .padding(.top, 50)
+                    } else {
+                        List {
+                            ForEach(viewModel.filteredTasks) { task in
+                                NavigationLink(destination: TaskDetailView(task: task)) {
+                                    TaskRowView(task: task) {
+                                        viewModel.updateTaskStatus(task: task, status: .completed)
+                                        showConfetti = true
+                                        let generator = UINotificationFeedbackGenerator()
+                                        generator.notificationOccurred(.success)
+                                    }
+                                }
+                            }
+                            .onDelete(perform: viewModel.deleteTask)
+                        }
+                    }
+                }
+                
+                if showConfetti {
+                    ParticleEffectView {
+                        showConfetti = false // アニメーション終了後にリセット
+                    }
+                    .zIndex(1)
                 }
             }
             .navigationTitle("タスク一覧")
@@ -222,7 +233,6 @@ struct WeeklyTasksView: View {
         }
     }
 }
-
 struct FilterButton: View {
     let title: String
     let isSelected: Bool
@@ -329,4 +339,4 @@ struct TaskRowView: View {
 
 #Preview {
     WeeklyTasksView()
-} 
+}

@@ -401,7 +401,7 @@ struct TimelineView: View {
                     .gesture(
                         MagnificationGesture()
                             .onChanged { value in
-                                let scaleDelta = (value - 1.0) * 0.5
+                                let scaleDelta = (value - 1.0) * 0.4
                                 let newScale = lastScaleValue + scaleDelta
                                 let boundedScale = min(max(newScale, viewModel.minZoom), viewModel.maxZoom)
                                 currentScale = boundedScale
