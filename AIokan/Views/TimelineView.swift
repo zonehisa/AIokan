@@ -80,8 +80,12 @@ class TimelineViewModel: ObservableObject {
     func startTimer() {
         // 1分ごとに現在時刻を更新
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.currentTime = Date()
+            self?.updateCurrentTime()
         }
+    }
+    
+    func updateCurrentTime() {
+        self.currentTime = Date()
     }
     
     func stopTimer() {
@@ -340,6 +344,8 @@ struct TimelineView: View {
         }
         .onAppear {
             viewModel.loadTasks()
+            viewModel.updateCurrentTime() // 現在時刻を即座に更新
+            viewModel.startTimer() // タイマーを明示的に再開
         }
         .onDisappear {
             viewModel.stopTimer()
