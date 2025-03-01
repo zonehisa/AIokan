@@ -33,6 +33,14 @@ class TaskDetailViewModel: ObservableObject {
         self.editedPriority = task.priority
         self.editedStatus = task.status
         self.editedEstimatedTime = String(task.estimatedTime ?? 60)
+        
+        // DatePickerで使用するCalendarの設定
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        calendar.locale = Locale(identifier: "ja_JP")
+        // UIDatePickerのデフォルト設定を変更
+        UIDatePicker.appearance().timeZone = TimeZone(identifier: "Asia/Tokyo")
+        UIDatePicker.appearance().calendar = calendar
     }
     
     func updateTask() {
@@ -106,6 +114,14 @@ struct TaskDetailView: View {
     
     init(task: Task) {
         _viewModel = StateObject(wrappedValue: TaskDetailViewModel(task: task))
+        
+        // DatePickerで使用するCalendarの設定
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        calendar.locale = Locale(identifier: "ja_JP")
+        // UIDatePickerのデフォルト設定を変更
+        UIDatePicker.appearance().timeZone = TimeZone(identifier: "Asia/Tokyo")
+        UIDatePicker.appearance().calendar = calendar
     }
     
     var body: some View {
@@ -525,6 +541,7 @@ struct TaskDetailView: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         formatter.locale = Locale(identifier: "ja_JP")
+        formatter.timeZone = TimeZone(identifier: "Asia/Tokyo")
         formatter.dateFormat = "yyyy/MM/dd HH:mm"
         return formatter.string(from: date)
     }
