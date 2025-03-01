@@ -195,7 +195,7 @@ struct WeeklyTasksView: View {
                     }
                 }
             }
-            .navigationTitle("今週のタスク")
+            .navigationTitle("タスク一覧")
             .navigationBarItems(
                 trailing: Button(action: {
                     viewModel.showAddTask = true

@@ -282,11 +282,17 @@ class TimelineViewModel: ObservableObject {
     }
     
     func zoomOut() {
-        zoomLevel = max(minZoom, zoomLevel - 0.1)
+        let newZoomLevel = max(minZoom, zoomLevel - 0.3)
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8, blendDuration: 0)) {
+            zoomLevel = newZoomLevel
+        }
     }
     
     func zoomIn() {
-        zoomLevel = min(maxZoom, zoomLevel + 0.1)
+        let newZoomLevel = min(maxZoom, zoomLevel + 0.3)
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8, blendDuration: 0)) {
+            zoomLevel = newZoomLevel
+        }
     }
     
     func resetZoom() {
@@ -395,31 +401,28 @@ struct TimelineView: View {
                     .gesture(
                         MagnificationGesture()
                             .onChanged { value in
-                                // ズーム感度を調整（0.02を掛けることで変化を緩やかに）
-                                let scaleDelta = (value - 1.0) * 0.02
+                                let scaleDelta = (value - 1.0) * 0.5
                                 let newScale = lastScaleValue + scaleDelta
-                                
-                                // 最小・最大の範囲内に制限
                                 let boundedScale = min(max(newScale, viewModel.minZoom), viewModel.maxZoom)
-                                
-                                // ズームレベルを更新
                                 currentScale = boundedScale
                                 viewModel.zoomLevel = boundedScale
-                                
-                                // 変化が大きい場合はフィードバック
                                 if abs(viewModel.zoomLevel - lastScaleValue) > 0.05 {
                                     let generator = UIImpactFeedbackGenerator(style: .light)
                                     generator.impactOccurred()
-                                    lastScaleValue = viewModel.zoomLevel  // フィードバック基準を更新
                                 }
                             }
                             .onEnded { _ in
-                                // ズームが終了したときの処理
-                                withAnimation(.easeInOut(duration: 0.1)) { // アニメーションの速度を調整
+                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8, blendDuration: 0)) {
                                     lastScaleValue = viewModel.zoomLevel
                                     currentScale = viewModel.zoomLevel
+                                    let currentHour = Calendar.current.component(.hour, from: viewModel.currentTime)
+                                    proxy.scrollTo(max(0, currentHour - 1), anchor: .center)
                                 }
+                                let generator = UIImpactFeedbackGenerator(style: .light)
+                                generator.impactOccurred()
                             }
+                            // スクロールジェスチャーと同時に認識可能にする
+                            .simultaneously(with: DragGesture().onChanged { _ in })
                     )
             }
             .coordinateSpace(name: "scrollView")
@@ -564,7 +567,7 @@ struct TimeBlockView: View {
                 // この時間帯のタスク一覧
                 ForEach(viewModel.tasksByHour()[hour] ?? [], id: \.id) { task in
                     TaskView(task: task, viewModel: viewModel)
-                        .padding(.top, CGFloat(viewModel.getTaskMinute(task)) * CGFloat(viewModel.zoomLevel) * 2)  // 分に応じて配置（ズーム対応）
+                        .padding(.top, CGFloat(viewModel.getTaskMinute(task)) * (viewModel.hourBlockHeight / 60.0))
                         .padding(.leading, 70)  // 時間表示分の余白
                 }
             }

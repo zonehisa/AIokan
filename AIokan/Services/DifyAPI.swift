@@ -11,13 +11,30 @@ enum APIError: Error {
 }
 
 struct GeminiAPI {
-    // Gemini 1.5 Flashモデルのエンドポイント
-    static let textGenerationEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-    static let visionGenerationEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-vision:generateContent"
+    // 会話履歴を保持する配列
+    private static var conversationHistory: [[String: Any]] = []
+    
+    // Gemini 1.5 Pro モデルのエンドポイント（カスタムチューニングされたモデルの場合は変更してください）
+    static let textGenerationEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent"
+    static let visionGenerationEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent"
     
     // APIキーの取得メソッド
     private static func getAPIKey() -> String? {
         return ConfigurationManager.shared.geminiAPIKey
+    }
+    
+    /// 会話履歴をリセットする
+    static func resetConversation() {
+        conversationHistory = []
+        
+        // システムメッセージを追加して大阪弁で応答するよう指示
+        let systemMessage: [String: Any] = [
+            "role": "model",
+            "parts": [
+                ["text": "あなたは「AIオカン」という名前の関西弁（大阪弁）を話すAIアシスタントです。このあとのすべての応答は大阪弁で行ってください。「～や」「～やで」「～やねん」「～やわ」「～ちゃう」などの表現を使い、親しみやすく温かみのある口調で話してください。ユーザーの質問に対して、役立つ情報を大阪弁で提供してください。"]
+            ]
+        ]
+        conversationHistory.append(systemMessage)
     }
     
     /// テキスト生成API
@@ -44,16 +61,20 @@ struct GeminiAPI {
             return
         }
         
-        // リクエストボディを作成 - Gemini 2.0向けに最適化
+        // ユーザーの新しいメッセージを追加
+        let userMessage: [String: Any] = [
+            "role": "user",
+            "parts": [
+                ["text": prompt]
+            ]
+        ]
+        
+        // 履歴に追加
+        conversationHistory.append(userMessage)
+        
+        // リクエストボディを作成 - 会話履歴を含める
         let requestBody: [String: Any] = [
-            "contents": [
-                [
-                    "role": "user",
-                    "parts": [
-                        ["text": prompt]
-                    ]
-                ]
-            ],
+            "contents": conversationHistory,
             "generationConfig": [
                 "temperature": 0.7,
                 "topK": 40,
@@ -106,7 +127,7 @@ struct GeminiAPI {
             
             // デバッグ用：レスポンスの内容を出力
             if let responseString = String(data: data, encoding: .utf8) {
-                print("Gemini 1.5 Flash APIレスポンス: \(responseString)")
+                print("Gemini API レスポンス: \(responseString)")
             }
             
             // JSONをパース
@@ -126,6 +147,16 @@ struct GeminiAPI {
                        let parts = content["parts"] as? [[String: Any]],
                        let firstPart = parts.first,
                        let text = firstPart["text"] as? String {
+                        
+                        // アシスタントの応答を会話履歴に追加
+                        let assistantMessage: [String: Any] = [
+                            "role": "model",
+                            "parts": [
+                                ["text": text]
+                            ]
+                        ]
+                        conversationHistory.append(assistantMessage)
+                        
                         completion(.success(text))
                         return
                     }
@@ -145,7 +176,7 @@ struct GeminiAPI {
     ///   - prompt: テキストプロンプト
     ///   - image: 画像
     ///   - completion: 結果のコールバック
-    static func generateFromImageAndText(prompt: String, image: UIImage, completion: @escaping (Result<String, Error>) -> Void) {
+    static func generateFromImageAndText(prompt: String?, image: UIImage, completion: @escaping (Result<String, Error>) -> Void) {
         guard let apiKey = getAPIKey() else {
             completion(.failure(APIError.apiError("APIキーが設定されていません")))
             return
@@ -173,22 +204,31 @@ struct GeminiAPI {
         
         let base64Image = imageData.base64EncodedString()
         
-        // リクエストボディを作成 - Gemini 2.0向けに最適化
-        let requestBody: [String: Any] = [
-            "contents": [
-                [
-                    "role": "user",
-                    "parts": [
-                        ["text": prompt],
-                        [
-                            "inline_data": [
-                                "mime_type": "image/jpeg",
-                                "data": base64Image
-                            ]
-                        ]
-                    ]
+        // ユーザーの新しいメッセージを作成（テキストと画像を含む）
+        var userMessageParts: [[String: Any]] = [
+            [
+                "inline_data": [
+                    "mime_type": "image/jpeg",
+                    "data": base64Image
                 ]
-            ],
+            ]
+        ]
+
+        if let prompt = prompt, !prompt.isEmpty {
+            userMessageParts.insert(["text": prompt], at: 0)
+        }
+
+        let userMessage: [String: Any] = [
+            "role": "user",
+            "parts": userMessageParts
+        ]
+        
+        // 履歴に追加
+        conversationHistory.append(userMessage)
+        
+        // リクエストボディを作成
+        let requestBody: [String: Any] = [
+            "contents": conversationHistory,
             "generationConfig": [
                 "temperature": 0.7,
                 "topK": 40,
@@ -241,7 +281,7 @@ struct GeminiAPI {
             
             // デバッグ用：レスポンスの内容を出力
             if let responseString = String(data: data, encoding: .utf8) {
-                print("Gemini 1.5 Flash Vision APIレスポンス: \(responseString)")
+                print("Gemini API Vision レスポンス: \(responseString)")
             }
             
             // JSONをパース
@@ -254,13 +294,23 @@ struct GeminiAPI {
                         return
                     }
                     
-                    // 成功レスポンスのパース - Gemini 2.0の応答形式に対応
+                    // 成功レスポンスのパース
                     if let candidates = json["candidates"] as? [[String: Any]],
                        let firstCandidate = candidates.first,
                        let content = firstCandidate["content"] as? [String: Any],
                        let parts = content["parts"] as? [[String: Any]],
                        let firstPart = parts.first,
                        let text = firstPart["text"] as? String {
+                        
+                        // アシスタントの応答を会話履歴に追加
+                        let assistantMessage: [String: Any] = [
+                            "role": "model",
+                            "parts": [
+                                ["text": text]
+                            ]
+                        ]
+                        conversationHistory.append(assistantMessage)
+                        
                         completion(.success(text))
                         return
                     }
