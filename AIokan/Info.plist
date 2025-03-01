@@ -50,5 +50,7 @@
             </array>
         </dict>
     </array>
+    <key>NSUserNotificationsUsageDescription</key>
+    <string>AIオカンがタスクの開始時間をお知らせするために通知を使用します。</string>
 </dict>
 </plist>
