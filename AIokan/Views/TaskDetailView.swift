@@ -111,6 +111,7 @@ struct TaskDetailView: View {
     @Environment(\.presentationMode) var presentationMode
     @StateObject private var viewModel: TaskDetailViewModel
     @State private var showingDeleteConfirmation = false
+    @State private var showConfetti: Bool = false // 紙吹雪エフェクトの表示状態
     
     init(task: Task) {
         _viewModel = StateObject(wrappedValue: TaskDetailViewModel(task: task))
@@ -119,64 +120,63 @@ struct TaskDetailView: View {
         var calendar = Calendar.current
         calendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
         calendar.locale = Locale(identifier: "ja_JP")
-        // UIDatePickerのデフォルト設定を変更
         UIDatePicker.appearance().timeZone = TimeZone(identifier: "Asia/Tokyo")
         UIDatePicker.appearance().calendar = calendar
     }
     
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                // ヘッダー部分（タイトルと優先度）
-                headerSection
-                
-                Divider()
-                
-                // 説明部分
-                descriptionSection
-                
-                Divider()
-                
-                // ステータスと期限
-                statusAndDueDateSection
-                
-                Divider()
-                
-                // 編集中の場合は保存ボタン、そうでない場合はアクションボタン
-                if viewModel.isEditing {
-                    saveButtonSection
-                } else {
-                    actionButtonsSection
+        ZStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    headerSection
+                    Divider()
+                    descriptionSection
+                    Divider()
+                    statusAndDueDateSection
+                    Divider()
+                    if viewModel.isEditing {
+                        saveButtonSection
+                    } else {
+                        actionButtonsSection
+                    }
+                }
+                .padding()
+                .navigationTitle(viewModel.isEditing ? "タスク編集" : "タスク詳細")
+                .navigationBarItems(
+                    trailing: viewModel.isEditing
+                        ? Button("キャンセル") { viewModel.setEditing(false) }
+                        : Button("編集") { viewModel.setEditing(true) }
+                )
+                .actionSheet(isPresented: $showingDeleteConfirmation) {
+                    ActionSheet(
+                        title: Text("タスクを削除"),
+                        message: Text("このタスクを削除してもよろしいですか？この操作は元に戻せません。"),
+                        buttons: [
+                            .destructive(Text("削除")) {
+                                deleteTask()
+                            },
+                            .cancel()
+                        ]
+                    )
+                }
+                .alert(item: Binding<TaskError?>(
+                    get: { viewModel.errorMessage.map { TaskError(message: $0) } },
+                    set: { viewModel.errorMessage = $0?.message }
+                )) { error in
+                    Alert(
+                        title: Text("エラー"),
+                        message: Text(error.message),
+                        dismissButton: .default(Text("OK"))
+                    )
                 }
             }
-            .padding()
-            .navigationTitle(viewModel.isEditing ? "タスク編集" : "タスク詳細")
-            .navigationBarItems(
-                trailing: viewModel.isEditing
-                    ? Button("キャンセル") { viewModel.setEditing(false) }
-                    : Button("編集") { viewModel.setEditing(true) }
-            )
-            .actionSheet(isPresented: $showingDeleteConfirmation) {
-                ActionSheet(
-                    title: Text("タスクを削除"),
-                    message: Text("このタスクを削除してもよろしいですか？この操作は元に戻せません。"),
-                    buttons: [
-                        .destructive(Text("削除")) {
-                            deleteTask()
-                        },
-                        .cancel()
-                    ]
-                )
-            }
-            .alert(item: Binding<TaskError?>(
-                get: { viewModel.errorMessage.map { TaskError(message: $0) } },
-                set: { viewModel.errorMessage = $0?.message }
-            )) { error in
-                Alert(
-                    title: Text("エラー"),
-                    message: Text(error.message),
-                    dismissButton: .default(Text("OK"))
-                )
+            
+            // 紙吹雪エフェクト
+            if showConfetti {
+                ParticleEffectView {
+                    showConfetti = false // アニメーション終了後にリセット
+                }
+                .zIndex(1) // 最前面に表示
             }
         }
     }
@@ -442,10 +442,12 @@ struct TaskDetailView: View {
     
     private var actionButtonsSection: some View {
         VStack(spacing: 15) {
-            // 完了ボタン（タスクが完了していない場合のみ）
             if viewModel.task.status != .completed {
                 Button(action: {
                     viewModel.updateTaskStatus(status: .completed)
+                    showConfetti = true // タスク完了時に紙吹雪発動
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.success)
                 }) {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
@@ -459,7 +461,6 @@ struct TaskDetailView: View {
                 .cornerRadius(10)
             }
             
-            // ステータス変更ボタン
             if viewModel.task.status == .pending {
                 Button(action: {
                     viewModel.updateTaskStatus(status: .inProgress)
@@ -504,7 +505,6 @@ struct TaskDetailView: View {
                 .cornerRadius(10)
             }
             
-            // 削除ボタン
             Button(action: {
                 showingDeleteConfirmation = true
             }) {
