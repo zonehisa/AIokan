@@ -86,46 +86,56 @@ class NotificationService: ObservableObject {
         
         // 通知基準時間が設定されていて、未来の時間であれば通知をスケジュール
         if let baseTime = notificationBaseTime, baseTime > Date() {
-            // 30分前の時間を計算
-            let notificationTime = baseTime.addingTimeInterval(-30 * 60)
+            let now = Date()
+            var notificationTime: Date
+            var notificationMessage: String
             
-            // 現在時刻より未来であれば通知をスケジュール
-            if notificationTime > Date() {
-                print("タスク「\(task.title)」の30分前通知をスケジュール: \(notificationTime)")
-                
-                // 通知コンテンツを作成
-                let content = UNMutableNotificationContent()
-                content.title = "AIオカンからのお知らせ"
-                content.body = "「\(task.title)」の\(timeTypeDescription)まであと30分です"
-                content.sound = .default
-                
-                // 通知のカスタムデータ
-                content.userInfo = [
-                    "taskId": task.id,
-                    "type": "scheduledReminder"
-                ]
-                
-                // 通知トリガーの作成
-                let triggerDate = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: notificationTime)
-                let trigger = UNCalendarNotificationTrigger(dateMatching: triggerDate, repeats: false)
-                
-                // 通知リクエストの作成
-                let request = UNNotificationRequest(
-                    identifier: "task_notification_\(task.id)",
-                    content: content,
-                    trigger: trigger
-                )
-                
-                // 通知のスケジュール
-                notificationCenter.add(request) { error in
-                    if let error = error {
-                        print("通知のスケジュールに失敗しました: \(error.localizedDescription)")
-                    } else {
-                        print("通知が正常にスケジュールされました")
-                    }
-                }
+            // 30分前の時間を計算
+            let thirtyMinBefore = baseTime.addingTimeInterval(-30 * 60)
+            
+            // 通知時間と内容を設定
+            if thirtyMinBefore > now {
+                // 30分前が現在より未来の場合：標準の「あと30分です」通知
+                notificationTime = thirtyMinBefore
+                notificationMessage = "「\(task.title)」の\(timeTypeDescription)まであと30分です"
+                print("30分前通知をスケジュール: \(notificationTime)")
             } else {
-                print("通知時間が現在時刻より過去のため、通知はスケジュールされません")
+                // 30分前が現在より過去の場合（=今から30分以内に開始）：予定時間ちょうどに「時間です」通知
+                notificationTime = baseTime
+                notificationMessage = "「\(task.title)」の\(timeTypeDescription)の時間です"
+                print("開始時間通知をスケジュール: \(notificationTime)（30分前が過去のため）")
+            }
+            
+            // 通知コンテンツを作成
+            let content = UNMutableNotificationContent()
+            content.title = "AIオカンからのお知らせ"
+            content.body = notificationMessage
+            content.sound = .default
+            
+            // 通知のカスタムデータ
+            content.userInfo = [
+                "taskId": task.id,
+                "type": "scheduledReminder"
+            ]
+            
+            // 通知トリガーの作成
+            let triggerDate = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: notificationTime)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: triggerDate, repeats: false)
+            
+            // 通知リクエストの作成
+            let request = UNNotificationRequest(
+                identifier: "task_notification_\(task.id)",
+                content: content,
+                trigger: trigger
+            )
+            
+            // 通知のスケジュール
+            notificationCenter.add(request) { error in
+                if let error = error {
+                    print("通知のスケジュールに失敗しました: \(error.localizedDescription)")
+                } else {
+                    print("通知が正常にスケジュールされました")
+                }
             }
         } else {
             print("タスクの予定時間も期限も設定されていないか、過去の時間のため通知はスケジュールされません")
