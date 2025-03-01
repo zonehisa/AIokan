@@ -20,6 +20,12 @@
     <string>1</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>登録する画像を取得するためにフォトライブラリにアクセスします</string>
+    <key>NSCameraUsageDescription</key>
+    <string>登録する画像をカメラを使って撮影します</string>
+    <key>NSUserNotificationsUsageDescription</key>
+    <string>AIオカンがタスクの開始時間をお知らせするために通知を使用します。</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
@@ -35,22 +41,9 @@
     <array>
         <string>UIInterfaceOrientationPortrait</string>
     </array>
-    <key>com.apple.developer.applesignin</key>
-    <array>
-        <string>Default</string>
-    </array>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
-            <key>CFBundleURLSchemes</key>
-            <array>
-                <string>com.googleusercontent.apps.37709725988-5fo3jgh1t3873hq3bdskpsva7r5r6okp</string>
-            </array>
-        </dict>
-    </array>
-    <key>NSUserNotificationsUsageDescription</key>
-    <string>AIオカンがタスクの開始時間をお知らせするために通知を使用します。</string>
-</dict>
-</plist>
+            <key>CFBundleURLSche

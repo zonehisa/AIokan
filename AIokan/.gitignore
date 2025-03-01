@@ -1,3 +1,4 @@
 *GoogleService-Info.plist
 *Constants.swift
 /.specstory
+*Secrets.swift
