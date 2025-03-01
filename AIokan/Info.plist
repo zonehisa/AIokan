@@ -46,4 +46,15 @@
         <dict>
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
-            <key>CFBundleURLSche
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>com.googleusercontent.apps.37709725988-5fo3jgh1t3873hq3bdskpsva7r5r6okp</string>
+            </array>
+        </dict>
+    </array>
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
+</dict>
+</plist>

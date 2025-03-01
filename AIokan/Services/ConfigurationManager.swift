@@ -6,7 +6,22 @@ class ConfigurationManager {
     
     // OAuth認証用のクライアントID
     var googleClientID: String? {
-        return loadSecretValue(for: "GIDClientID") as? String
+        // 1. Secretsファイルから値を取得して優先する (377...)
+        if let secretClientID = loadSecretValue(for: "GIDClientID") as? String {
+            print("ConfigurationManager: Secretsから取得したクライアントID = \(secretClientID)")
+            return secretClientID
+        }
+        
+        // 2. バックアップとしてFirebaseの設定ファイルを確認 (212...)
+        if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+           let plist = NSDictionary(contentsOfFile: path),
+           let clientID = plist["CLIENT_ID"] as? String {
+            print("ConfigurationManager: FirebaseからバックアップとしてのクライアントID = \(clientID)")
+            return clientID
+        }
+        
+        print("ConfigurationManager: クライアントIDを取得できませんでした")
+        return nil
     }
     
     // URLスキーム
@@ -15,6 +30,7 @@ class ConfigurationManager {
            let firstUrlType = urlTypes.first,
            let urlSchemes = firstUrlType["CFBundleURLSchemes"] as? [String],
            let scheme = urlSchemes.first {
+            print("ConfigurationManager: URLスキーム = \(scheme)")
             return scheme
         }
         return nil

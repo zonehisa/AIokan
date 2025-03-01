@@ -192,10 +192,20 @@ class AuthService: NSObject, ObservableObject {
         
         print("ルートビューコントローラー取得成功: \(type(of: rootViewController))")
         
+        // GoogleSignIn設定の詳細をログ出力
+        if let config = GIDSignIn.sharedInstance.configuration {
+            print("GoogleSignIn設定: クライアントID = \(config.clientID)")
+        } else {
+            print("警告: GoogleSignInの設定がありません")
+        }
+        
         // GoogleSignInの現在のAPIに合わせて修正 - シンプル化
         GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { [weak self] result, error in
             if let error = error {
                 print("Googleログインエラー: \(error.localizedDescription)")
+                if let nsError = error as NSError? {
+                    print("エラー詳細: \(nsError.domain), コード: \(nsError.code), 説明: \(nsError.userInfo)")
+                }
                 return
             }
             
@@ -217,6 +227,9 @@ class AuthService: NSObject, ObservableObject {
             Auth.auth().signIn(with: credential) { [weak self] authResult, error in
                 if let error = error {
                     print("Firebaseログインエラー: \(error.localizedDescription)")
+                    if let nsError = error as NSError? {
+                        print("Firebase詳細エラー: \(nsError.domain), コード: \(nsError.code), 説明: \(nsError.userInfo)")
+                    }
                     return
                 }
                 
