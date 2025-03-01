@@ -467,6 +467,10 @@ struct TimelineView: View {
                 .position(x: geometry.size.width / 2, y: position)
             }
         }
+        .onReceive(viewModel.$currentTime) { _ in
+            // 現在時刻が更新されたときに再描画をトリガー
+            // ここで何もする必要はありませんが、SwiftUIが再描画を行います
+        }
     }
     
     private var addButton: some View {
