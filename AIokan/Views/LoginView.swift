@@ -223,4 +223,6 @@ struct SignInWithAppleButton: UIViewRepresentable {
 
 #Preview {
     LoginView()
+        .environmentObject(AuthService()) // AuthServiceのインスタンスを渡す
+
 }

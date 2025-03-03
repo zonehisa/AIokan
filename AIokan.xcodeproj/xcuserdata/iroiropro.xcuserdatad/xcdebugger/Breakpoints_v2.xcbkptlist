@@ -3,4 +3,27 @@
    uuid = "7B51A991-A144-4291-8A35-3385BAE98CAD"
    type = "1"
    version = "2.0">
+   <Breakpoints>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.AddressBreakpoint">
+         <BreakpointContent
+            uuid = "A9AA64B1-9A8D-427C-88CF-45CC5B5B8D86"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            symbolName = "*0x104c993a8">
+            <Locations>
+               <Location
+                  uuid = "A9AA64B1-9A8D-427C-88CF-45CC5B5B8D86 - dbb30d75b3b52e13"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "lldb_image_notifier"
+                  moduleName = "dyld"
+                  usesParentBreakpointCondition = "Yes">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+   </Breakpoints>
 </Bucket>
